@@ -1,0 +1,63 @@
+MODULE Dir;
+
+IMPORT sys := SYSTEM;
+
+CONST
+
+  MAX_PATH = 260;
+
+TYPE
+
+  STRING = ARRAY MAX_PATH OF CHAR;
+
+  PSecurityAttributes = POINTER TO TSecurityAttributes;
+
+  TSecurityAttributes = RECORD
+    nLength: INTEGER;
+    lpSecurityDescriptor: INTEGER;
+    bInheritHandle: INTEGER
+  END;
+
+VAR
+
+  RemoveDirectory: PROCEDURE(lpPathName: INTEGER): INTEGER;
+  GetFileAttributes: PROCEDURE(lpPathName: INTEGER): SET;
+  CreateDirectory: PROCEDURE(lpPathName: INTEGER; lpSecurityAttributes: PSecurityAttributes): INTEGER;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE Remove*(DirName: ARRAY OF CHAR): BOOLEAN;
+BEGIN
+  RETURN RemoveDirectory(sys.ADR(DirName[0])) # 0
+END Remove;
+
+PROCEDURE Exists*(DirName: ARRAY OF CHAR): BOOLEAN;
+VAR Code: SET;
+BEGIN
+  Code := GetFileAttributes(sys.ADR(DirName[0]))
+  RETURN (Code # {0..31}) & ({4} * Code # {})
+END Exists;
+
+PROCEDURE Create*(DirName: ARRAY OF CHAR): BOOLEAN;
+BEGIN
+  RETURN CreateDirectory(sys.ADR(DirName[0]), NIL) # 0
+END Create;
+
+PROCEDURE Init;
+VAR kernel32: INTEGER;
+BEGIN
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("RemoveDirectoryA", kernel32, sys.ADR(RemoveDirectory));
+  GetProc("GetFileAttributesA", kernel32, sys.ADR(GetFileAttributes));
+  GetProc("CreateDirectoryA", kernel32, sys.ADR(CreateDirectory));
+END Init;
+
+BEGIN
+  Init;
+END Dir.

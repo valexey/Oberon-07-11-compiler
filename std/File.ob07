@@ -1,0 +1,162 @@
+MODULE File;
+
+IMPORT sys := SYSTEM;
+
+CONST
+
+  MAX_PATH = 260;
+  OFS_MAXPATHNAME = 128;
+
+  OPEN_R* = 0;     OPEN_W* = 1;     OPEN_RW* = 2;
+  SEEK_BEG* = 0;   SEEK_CUR* = 1;   SEEK_END* = 2;
+
+TYPE
+
+  STRING = ARRAY MAX_PATH OF CHAR;
+
+  TFileTime = RECORD
+    dwLowDateTime, dwHighDateTime: INTEGER
+  END;
+
+  TWin32FindData = RECORD
+    dwFileAttributes: SET;
+    ftCreationTime: TFileTime;
+    ftLastAccessTime: TFileTime;
+    ftLastWriteTime: TFileTime;
+    nFileSizeHigh: INTEGER;
+    nFileSizeLow: INTEGER;
+    dwReserved0: INTEGER;
+    dwReserved1: INTEGER;
+    cFileName: STRING;
+    cAlternateFileName: ARRAY 14 OF CHAR
+  END;
+
+  PSecurityAttributes = POINTER TO TSecurityAttributes;
+
+  TSecurityAttributes = RECORD
+    nLength: INTEGER;
+    lpSecurityDescriptor: INTEGER;
+    bInheritHandle: INTEGER
+  END;
+
+  OFSTRUCT = RECORD
+    cBytes: CHAR;
+    fFixedDisk: CHAR;
+    nErrCode: sys.CARD16;
+    Reserved1: sys.CARD16;
+    Reserved2: sys.CARD16;
+    szPathName: ARRAY OFS_MAXPATHNAME OF CHAR
+  END;
+
+  POverlapped = POINTER TO OVERLAPPED;
+
+  OVERLAPPED = RECORD
+    Internal: INTEGER;
+    InternalHigh: INTEGER;
+    Offset: INTEGER;
+    OffsetHigh: INTEGER;
+    hEvent: INTEGER
+  END;
+
+VAR
+
+  FindFirstFile: PROCEDURE(lpFileName: INTEGER; lpFindFileData: TWin32FindData): INTEGER;
+  DeleteFile: PROCEDURE(lpFileName: INTEGER): INTEGER;
+  FindClose: PROCEDURE(hFindFile: INTEGER): INTEGER;
+  CloseHandle: PROCEDURE(hObject: INTEGER): INTEGER;
+  CreateFile: PROCEDURE(lpFileName, dwDesiredAccess, dwShareMode: INTEGER;
+    lpSecurityAttributes: PSecurityAttributes;
+      dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile: INTEGER): INTEGER;
+  OpenFile: PROCEDURE(lpFileName: INTEGER; lpReOpenBuff: OFSTRUCT; uStyle: INTEGER): INTEGER;
+  SetFilePointer: PROCEDURE(hFile, lDistanceToMove, lpDistanceToMoveHigh, dwMoveMethod: INTEGER): INTEGER;
+  ReadFile, WriteFile: PROCEDURE(hFile, Buffer, nNumberOfBytesToRead, lpNumberOfBytesRead: INTEGER;
+    lpOverlapped: POverlapped): INTEGER;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE Exists*(FName: ARRAY OF CHAR): BOOLEAN;
+VAR FindData: TWin32FindData; Handle, res: INTEGER;
+BEGIN
+  Handle := FindFirstFile(sys.ADR(FName[0]), FindData);
+  IF Handle # -1 THEN
+    res := FindClose(Handle);
+    IF FindData.dwFileAttributes >= {4} THEN
+      Handle := -1
+    END
+  END
+  RETURN Handle # -1
+END Exists;
+
+PROCEDURE Delete*(FName: ARRAY OF CHAR): BOOLEAN;
+BEGIN
+  RETURN DeleteFile(sys.ADR(FName[0])) # 0
+END Delete;
+
+PROCEDURE Create*(FName: ARRAY OF CHAR): INTEGER;
+BEGIN
+  RETURN CreateFile(sys.ADR(FName[0]), 0C0000000H, 0, NIL, 2, 80H, 0)
+END Create;
+
+PROCEDURE Close*(F: INTEGER);
+VAR res: INTEGER;
+BEGIN
+  res := CloseHandle(F)
+END Close;
+
+PROCEDURE Open*(FName: ARRAY OF CHAR; Mode: INTEGER): INTEGER;
+VAR ofstr: OFSTRUCT;
+BEGIN
+  RETURN OpenFile(sys.ADR(FName[0]), ofstr, Mode)
+END Open;
+
+PROCEDURE Seek*(F, Offset, Origin: INTEGER): INTEGER;
+BEGIN
+  RETURN SetFilePointer(F, Offset, 0, Origin)
+END Seek;
+
+PROCEDURE Read*(F, Buffer, Count: INTEGER): INTEGER;
+VAR res, n: INTEGER;
+BEGIN
+  IF ReadFile(F, Buffer, Count, sys.ADR(n), NIL) = 0 THEN
+    res := -1
+  ELSE
+    res := n
+  END
+  RETURN res
+END Read;
+
+PROCEDURE Write*(F, Buffer, Count: INTEGER): INTEGER;
+VAR res, n: INTEGER;
+BEGIN
+  IF WriteFile(F, Buffer, Count, sys.ADR(n), NIL) = 0 THEN
+    res := -1
+  ELSE
+    res := n
+  END
+  RETURN res
+END Write;
+
+PROCEDURE Init;
+VAR kernel32: INTEGER;
+BEGIN
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("FindFirstFileA", kernel32, sys.ADR(FindFirstFile));
+  GetProc("FindClose", kernel32, sys.ADR(FindClose));
+  GetProc("DeleteFileA", kernel32, sys.ADR(DeleteFile));
+  GetProc("CreateFileA", kernel32, sys.ADR(CreateFile));
+  GetProc("CloseHandle", kernel32, sys.ADR(CloseHandle));
+  GetProc("OpenFile", kernel32, sys.ADR(OpenFile));
+  GetProc("SetFilePointer", kernel32, sys.ADR(SetFilePointer));
+  GetProc("ReadFile", kernel32, sys.ADR(ReadFile));
+  GetProc("WriteFile", kernel32, sys.ADR(WriteFile));
+END Init;
+
+BEGIN
+  Init;
+END File.

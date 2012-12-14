@@ -1,0 +1,49 @@
+MODULE Rnd;
+
+CONST m = 2147483647;
+
+VAR z : INTEGER;
+
+PROCEDURE NextRND;
+CONST
+  a = 16807;
+  q = m DIV a;
+  r = m MOD a;
+VAR lo, hi, test: INTEGER;
+BEGIN
+  hi := z DIV q;
+  lo := z MOD q;
+  test := a * lo - r * hi;
+  IF test > 0 THEN
+    z := test
+  ELSE
+    z := test + m
+  END
+END NextRND;
+
+PROCEDURE PutSeed*(seed: INTEGER);
+BEGIN
+  seed := seed MOD m;
+  IF seed = 0 THEN
+    z := 1
+  ELSE
+    z := seed
+  END;
+  NextRND
+END PutSeed;
+
+PROCEDURE RND*(range : INTEGER): INTEGER;
+BEGIN
+  NextRND
+  RETURN z MOD range
+END RND;
+
+PROCEDURE Random*(): LONGREAL;
+BEGIN
+  NextRND
+  RETURN LONG(FLT(z - 1)) * (1.0D0 / LONG(FLT(m - 1)))
+END Random;
+
+BEGIN
+  z := 314053
+END Rnd.

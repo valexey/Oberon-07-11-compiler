@@ -1,0 +1,107 @@
+MODULE Utils;
+
+IMPORT sys := SYSTEM;
+
+CONST
+
+  MAX_PARAM = 1024;
+
+TYPE
+
+  STRING = ARRAY 260 OF CHAR;
+
+VAR
+
+  Params: ARRAY MAX_PARAM, 2 OF INTEGER;
+  ParamCount*: INTEGER;
+  CharToOem: PROCEDURE(lpszSrc, lpszDst: INTEGER): INTEGER;
+  GetCommandLine: PROCEDURE(): INTEGER;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE GetChar(adr: INTEGER): CHAR;
+VAR res: CHAR;
+BEGIN
+  sys.GET(adr, res)
+  RETURN res
+END GetChar;
+
+PROCEDURE ParamParse;
+VAR p, count: INTEGER; c: CHAR; cond: INTEGER;
+
+  PROCEDURE ChangeCond(A, B, C: INTEGER);
+  BEGIN
+    IF (c <= 20X) & (c # 0X) THEN
+      cond := A
+    ELSIF c = 22X THEN
+      cond := B
+    ELSIF c = 0X THEN
+      cond := 6
+    ELSE
+      cond := C
+    END
+  END ChangeCond;
+
+BEGIN
+  p := GetCommandLine();
+  cond := 0;
+  count := 0;
+  WHILE (count < MAX_PARAM) & (cond # 6) DO
+    c := GetChar(p);
+    CASE cond OF
+    |0: ChangeCond(0, 4, 1); IF cond = 1 THEN Params[count, 0] := p END
+    |1: ChangeCond(0, 3, 1); IF cond IN {0, 6} THEN Params[count, 1] := p - 1; INC(count) END
+    |3: ChangeCond(3, 1, 3); IF cond = 6 THEN Params[count, 1] := p - 1; INC(count) END
+    |4: ChangeCond(5, 0, 5); IF cond = 5 THEN Params[count, 0] := p END
+    |5: ChangeCond(5, 1, 5); IF cond = 6 THEN Params[count, 1] := p - 1; INC(count) END
+    END;
+    INC(p)
+  END;
+  ParamCount := count - 1
+END ParamParse;
+
+PROCEDURE AnsiToOem*(VAR str: ARRAY OF CHAR);
+VAR res: INTEGER;
+BEGIN
+  str[LEN(str) - 1] := 0X;
+  res := CharToOem(sys.ADR(str), sys.ADR(str))
+END AnsiToOem;
+
+PROCEDURE ParamStr*(VAR str: ARRAY OF CHAR; n: INTEGER);
+VAR i, j, len: INTEGER; c: CHAR;
+BEGIN
+  j := 0;
+  IF n < ParamCount + 1 THEN
+    len := LEN(str) - 1;
+    i := Params[n, 0];
+    WHILE (j < len) & (i <= Params[n, 1]) DO
+      c := GetChar(i);
+      IF c # 22X THEN
+        str[j] := c;
+        INC(j)
+      END;
+      INC(i);
+    END;
+  END;
+  str[j] := 0X
+END ParamStr;
+
+PROCEDURE Init;
+VAR kernel32, user32: INTEGER;
+BEGIN
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  user32 := sys.LOADLIB(sys.ADR("user32.dll"));
+  GetProc("CharToOemA", user32, sys.ADR(CharToOem));
+  GetProc("GetCommandLineA", kernel32, sys.ADR(GetCommandLine));
+  ParamParse;
+END Init;
+
+BEGIN
+  Init;
+END Utils.

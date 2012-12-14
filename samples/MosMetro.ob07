@@ -1,0 +1,802 @@
+(* ОНХЯЙ ЙПЮРВЮИЬЕЦН ОСРХ ЛЕФДС ДБСЛЪ ЯРЮМЖХЪЛХ ЛНЯЙНБЯЙНЦН ЛЕРПНОНКХРЕМЮ,
+   ЮЙРСЮКЭМНЯРЭ: ЯЕМРЪАПЭ 2012 Ц. *)
+
+MODULE MosMetro;
+
+IMPORT RTL, In, Out, Console, Utils;
+
+CONST
+
+  STRLEN = 40;
+  LCOUNT = 20;
+  SCOUNT = 200;
+
+TYPE
+
+  STRING = ARRAY STRLEN OF CHAR;
+
+  LINES = ARRAY LCOUNT OF STRING;
+
+  STATION = RECORD
+    Name: STRING;
+    Line: INTEGER
+  END;
+
+  STATIONS = ARRAY SCOUNT OF STATION;
+
+  SORT = ARRAY SCOUNT OF STRING;
+
+  MATRIX = ARRAY SCOUNT, SCOUNT OF REAL;
+
+VAR
+
+  Lines, AccLines: LINES;
+  Stations: STATIONS;
+  StationsSort: SORT;
+  Matrix: MATRIX;
+  sortcount: INTEGER;
+
+PROCEDURE OutString(str: ARRAY OF CHAR);
+VAR s: ARRAY 256 OF CHAR;
+BEGIN
+  COPY(str, s);
+  Utils.AnsiToOem(s);
+  Out.String(s);
+END OutString;
+
+PROCEDURE Init();
+
+  PROCEDURE SetLine(From, To, Line: INTEGER);
+  VAR i: INTEGER;
+  BEGIN
+    FOR i := From TO To DO
+      Stations[i].Line := Line;
+    END;
+  END SetLine;
+
+  PROCEDURE SetLink(A, B: INTEGER; Time: INTEGER);
+  BEGIN
+    Matrix[A, B] := FLT(Time);
+    Matrix[B, A] := FLT(Time);
+  END SetLink;
+
+BEGIN
+
+  Lines[1] := "янйнкэмхвеяйюъ";
+  AccLines[1] := "янйнкэмхвеяйсч";
+
+  Stations[  1].Name := "чцн-гюоюдмюъ";
+  Stations[  2].Name := "опняоейр бепмюдяйнцн";
+  Stations[  3].Name := "смхбепяхрер";
+  Stations[  4].Name := "бнпнаэебш цнпш";
+  Stations[  5].Name := "яонпрхбмюъ";
+  Stations[  6].Name := "тпсмгемяйюъ";
+  Stations[  7].Name := "оюпй йскэрспш";
+  Stations[  8].Name := "йпнонрйхмяйюъ";
+  Stations[  9].Name := "ахакхнрейю хлемх кемхмю";
+  Stations[ 10].Name := "нунрмши пъд";
+  Stations[ 11].Name := "ксаъмйю";
+  Stations[ 12].Name := "вхярше опсдш";
+  Stations[ 13].Name := "йпюямше бнпнрю";
+  Stations[ 14].Name := "йнлянлнкэяйюъ";
+  Stations[ 15].Name := "йпюямняекэяйюъ";
+  Stations[ 16].Name := "янйнкэмхйх";
+  Stations[ 17].Name := "опенапюфемяйюъ окныюдэ";
+  Stations[ 18].Name := "вепйхгнбяйюъ";
+  Stations[ 19].Name := "скхжю ондаекэяйнцн";
+
+  SetLine(1, 19, 1);
+
+  SetLink(  1,   2, 3);
+  SetLink(  2,   3, 3);
+  SetLink(  3,   4, 3);
+  SetLink(  4,   5, 3);
+  SetLink(  5,   6, 2);
+  SetLink(  6,   7, 3);
+  SetLink(  7,   8, 2);
+  SetLink(  8,   9, 2);
+  SetLink(  9,  10, 2);
+  SetLink( 10,  11, 2);
+  SetLink( 11,  12, 2);
+  SetLink( 12,  13, 1);
+  SetLink( 13,  14, 2);
+  SetLink( 14,  15, 2);
+  SetLink( 15,  16, 2);
+  SetLink( 16,  17, 3);
+  SetLink( 17,  18, 4);
+  SetLink( 18,  19, 2);
+
+
+  Lines[2] := "гюлняйбнпежйюъ";
+  AccLines[2] := "гюлняйбнпежйсч";
+
+  Stations[ 20].Name := "певмни бнйгюк";
+  Stations[ 21].Name := "бндмши ярюдхнм";
+  Stations[ 22].Name := "бнийнбяйюъ";
+  Stations[ 23].Name := "янйнк";
+  Stations[ 24].Name := "ющпнонпр";
+  Stations[ 25].Name := "дхмюлн";
+  Stations[ 26].Name := "аекнпсяяйюъ";
+  Stations[ 27].Name := "люъйнбяйюъ";
+  Stations[ 28].Name := "рбепяйюъ";
+  Stations[ 29].Name := "реюрпюкэмюъ";
+  Stations[ 30].Name := "мнбнйсгмежйюъ";
+  Stations[ 31].Name := "оюбекежйюъ";
+  Stations[ 32].Name := "юбрнгюбндяйюъ";
+  Stations[ 33].Name := "йнкнлемяйюъ";
+  Stations[ 34].Name := "йюьхпяйюъ";
+  Stations[ 35].Name := "йюмрелхпнбяйюъ";
+  Stations[ 36].Name := "жюпхжшмн";
+  Stations[ 37].Name := "нпеунбн";
+  Stations[ 38].Name := "днлндеднбяйюъ";
+  Stations[ 39].Name := "йпюямнцбюпдеияйюъ";
+
+  SetLine(20, 39, 2);
+
+  SetLink( 20,  21, 2);
+  SetLink( 21,  22, 3);
+  SetLink( 22,  23, 3);
+  SetLink( 23,  24, 2);
+  SetLink( 24,  25, 3);
+  SetLink( 25,  26, 3);
+  SetLink( 26,  27, 2);
+  SetLink( 27,  28, 2);
+  SetLink( 28,  29, 2);
+  SetLink( 29,  30, 3);
+  SetLink( 30,  31, 2);
+  SetLink( 31,  32, 3);
+  SetLink( 32,  33, 5);
+  SetLink( 33,  34, 4);
+  SetLink( 34,  35, 3);
+  SetLink( 35,  36, 2);
+  SetLink( 36,  37, 3);
+  SetLink( 37,  38, 2);
+  SetLink( 38,  39, 3);
+
+
+  Lines[3] := "юпаюряйн-онйпнбяйюъ";
+  AccLines[3] := "юпаюряйн-онйпнбяйсч";
+
+  Stations[ 40].Name := "лхрхмн";
+  Stations[ 41].Name := "бнкнйнкюляйюъ";
+  Stations[ 42].Name := "лъйхмхмн";
+  Stations[ 43].Name := "ярпнцхмн";
+  Stations[ 44].Name := "йпшкюряйне";
+  Stations[ 45].Name := "лнкндефмюъ";
+  Stations[ 46].Name := "йсмжебяйюъ";
+  Stations[ 47].Name := "якюбъмяйхи аскэбюп";
+  Stations[ 48].Name := "оюпй онаедш";
+  Stations[ 49].Name := "йхебяйюъ";
+  Stations[ 50].Name := "ялнкемяйюъ";
+  Stations[ 51].Name := "юпаюряйюъ";
+  Stations[ 52].Name := "окныюдэ пебнкчжхх";
+  Stations[ 53].Name := "йспяйюъ";
+  Stations[ 54].Name := "аюслюмяйюъ";
+  Stations[ 55].Name := "щкейрпнгюбндяйюъ";
+  Stations[ 56].Name := "яелемнбяйюъ";
+  Stations[ 57].Name := "оюпрхгюмяйюъ";
+  Stations[ 58].Name := "хглюикнбяйюъ";
+  Stations[ 59].Name := "оепбнлюияйюъ";
+  Stations[ 60].Name := "ыекйнбяйюъ";
+
+  SetLine(40, 60, 3);
+
+  SetLink( 40,  41, 3);
+  SetLink( 41,  42, 2);
+  SetLink( 42,  43, 4);
+  SetLink( 43,  44, 9);
+  SetLink( 44,  45, 4);
+  SetLink( 45,  46, 3);
+  SetLink( 46,  47, 4);
+  SetLink( 47,  48, 4);
+  SetLink( 48,  49, 4);
+  SetLink( 49,  50, 2);
+  SetLink( 50,  51, 2);
+  SetLink( 51,  52, 2);
+  SetLink( 52,  53, 3);
+  SetLink( 53,  54, 3);
+  SetLink( 54,  55, 3);
+  SetLink( 55,  56, 2);
+  SetLink( 56,  57, 3);
+  SetLink( 57,  58, 3);
+  SetLink( 58,  59, 3);
+  SetLink( 59,  60, 2);
+
+
+  Lines[4] := "тхкебяйюъ";
+  AccLines[4] := "тхкебяйсч";
+
+  Stations[ 61].Name := "йсмжебяйюъ";
+  Stations[ 62].Name := "охнмепяйюъ";
+  Stations[ 63].Name := "тхкебяйхи оюпй";
+  Stations[ 64].Name := "аюцпюрхнмнбяйюъ";
+  Stations[ 65].Name := "тхкх";
+  Stations[ 66].Name := "йсрсгнбяйюъ";
+  Stations[ 67].Name := "ярсдемвеяйюъ";
+  Stations[ 68].Name := "йхебяйюъ";
+  Stations[ 69].Name := "ялнкемяйюъ";
+  Stations[ 70].Name := "юпаюряйюъ";
+  Stations[ 71].Name := "юкейяюмдпнбяйхи яюд";
+
+  SetLine(61, 71, 4);
+
+  SetLink( 61,  62, 2);
+  SetLink( 62,  63, 2);
+  SetLink( 63,  64, 2);
+  SetLink( 64,  65, 3);
+  SetLink( 65,  66, 3);
+  SetLink( 66,  67, 2);
+  SetLink( 67,  68, 2);
+  SetLink( 68,  69, 2);
+  SetLink( 69,  70, 2);
+  SetLink( 70,  71, 1);
+
+
+  Lines[5] := "йнкэжебюъ";
+  AccLines[5] := "йнкэжебсч";
+
+  Stations[ 72].Name := "йхебяйюъ";
+  Stations[ 73].Name := "йпюямнопеямемяйюъ";
+  Stations[ 74].Name := "аекнпсяяйюъ";
+  Stations[ 75].Name := "мнбнякнандяйюъ";
+  Stations[ 76].Name := "опняоейр лхпю";
+  Stations[ 77].Name := "йнлянлнкэяйюъ";
+  Stations[ 78].Name := "йспяйюъ";
+  Stations[ 79].Name := "рюцюмяйюъ";
+  Stations[ 80].Name := "оюбекежйюъ";
+  Stations[ 81].Name := "днапшмхмяйюъ";
+  Stations[ 82].Name := "нйръапэяйюъ";
+  Stations[ 83].Name := "оюпй йскэрспш";
+
+  SetLine(72, 83, 5);
+
+  SetLink( 72,  73, 3);
+  SetLink( 73,  74, 3);
+  SetLink( 74,  75, 2);
+  SetLink( 75,  76, 3);
+  SetLink( 76,  77, 3);
+  SetLink( 77,  78, 3);
+  SetLink( 78,  79, 2);
+  SetLink( 79,  80, 3);
+  SetLink( 80,  81, 3);
+  SetLink( 81,  82, 2);
+  SetLink( 82,  83, 2);
+  SetLink( 72,  83, 3);
+
+
+  Lines[6] := "йюксфяйн-пхфяйюъ";
+  AccLines[6] := "йюксфяйн-пхфяйсч";
+
+  Stations[ 84].Name := "ледбедйнбн";
+  Stations[ 85].Name := "аюасьйхмяйюъ";
+  Stations[ 86].Name := "ябхакнбн";
+  Stations[ 87].Name := "анрюмхвеяйхи яюд";
+  Stations[ 88].Name := "бдму";
+  Stations[ 89].Name := "юкейяеебяйюъ";
+  Stations[ 90].Name := "пхфяйюъ";
+  Stations[ 91].Name := "опняоейр лхпю";
+  Stations[ 92].Name := "ясуюпебяйюъ";
+  Stations[ 93].Name := "рспцемебяйюъ";
+  Stations[ 94].Name := "йхрюи-цнпнд";
+  Stations[ 95].Name := "рперэъйнбяйюъ";
+  Stations[ 96].Name := "нйръапэяйюъ";
+  Stations[ 97].Name := "ьюанкнбяйюъ";
+  Stations[ 98].Name := "кемхмяйхи опняоейр";
+  Stations[ 99].Name := "юйюделхвеяйюъ";
+  Stations[100].Name := "опнтянчгмюъ";
+  Stations[101].Name := "мнбше вепелсьйх";
+  Stations[102].Name := "йюксфяйюъ";
+  Stations[103].Name := "аекъебн";
+  Stations[104].Name := "йнмэйнбн";
+  Stations[105].Name := "реокши ярюм";
+  Stations[106].Name := "ъяемебн";
+  Stations[107].Name := "мнбнъяемебяйюъ";
+
+  SetLine(84, 107, 6);
+
+  SetLink( 84,  85, 3);
+  SetLink( 85,  86, 2);
+  SetLink( 86,  87, 2);
+  SetLink( 87,  88, 3);
+  SetLink( 88,  89, 2);
+  SetLink( 89,  90, 3);
+  SetLink( 90,  91, 2);
+  SetLink( 91,  92, 2);
+  SetLink( 92,  93, 2);
+  SetLink( 93,  94, 2);
+  SetLink( 94,  95, 3);
+  SetLink( 95,  96, 3);
+  SetLink( 96,  97, 2);
+  SetLink( 97,  98, 3);
+  SetLink( 98,  99, 3);
+  SetLink( 99, 100, 2);
+  SetLink(100, 101, 2);
+  SetLink(101, 102, 3);
+  SetLink(102, 103, 2);
+  SetLink(103, 104, 2);
+  SetLink(104, 105, 4);
+  SetLink(105, 106, 3);
+  SetLink(106, 107, 2);
+
+
+  Lines[7] := "рюцюмяйн-йпюямнопеямемяйюъ";
+  AccLines[7] := "рюцюмяйн-йпюямнопеямемяйсч";
+
+  Stations[108].Name := "окюмепмюъ";
+  Stations[109].Name := "яундмемяйюъ";
+  Stations[110].Name := "рсьхмяйюъ";
+  Stations[111].Name := "ысйхмяйюъ";
+  Stations[112].Name := "нйръапэяйне онке";
+  Stations[113].Name := "онкефюебяйюъ";
+  Stations[114].Name := "аецнбюъ";
+  Stations[115].Name := "скхжю 1905 цндю";
+  Stations[116].Name := "аюппхйюдмюъ";
+  Stations[117].Name := "осьйхмяйюъ";
+  Stations[118].Name := "йсгмежйхи лняр";
+  Stations[119].Name := "йхрюи-цнпнд";
+  Stations[120].Name := "рюцюмяйюъ";
+  Stations[121].Name := "опнкерюпяйюъ";
+  Stations[122].Name := "бнкцнцпюдяйхи опняоейр";
+  Stations[123].Name := "рейярхкэыхйх";
+  Stations[124].Name := "йсгэлхмйх";
+  Stations[125].Name := "пъгюмяйхи опняоейр";
+  Stations[126].Name := "бшухмн";
+
+  SetLine(108, 126, 7);
+
+  SetLink(108, 109, 2);
+  SetLink(109, 110, 3);
+  SetLink(110, 111, 4);
+  SetLink(111, 112, 3);
+  SetLink(112, 113, 3);
+  SetLink(113, 114, 2);
+  SetLink(114, 115, 2);
+  SetLink(115, 116, 2);
+  SetLink(116, 117, 3);
+  SetLink(117, 118, 2);
+  SetLink(118, 119, 2);
+  SetLink(119, 120, 3);
+  SetLink(120, 121, 2);
+  SetLink(121, 122, 2);
+  SetLink(122, 123, 4);
+  SetLink(123, 124, 3);
+  SetLink(124, 125, 3);
+  SetLink(125, 126, 2);
+
+
+  Lines[8] := "йюкхмхмяйюъ";
+  AccLines[8] := "йюкхмхмяйсч";
+
+  Stations[127].Name := "мнбнцхпеебн";
+  Stations[128].Name := "оепнбн";
+  Stations[129].Name := "ьняяе щмрсгхюярнб";
+  Stations[130].Name := "юбхюлнрнпмюъ";
+  Stations[131].Name := "окныюдэ хкэхвю";
+  Stations[132].Name := "люпйяхяряйюъ";
+  Stations[133].Name := "рперэъйнбяйюъ";
+  Stations[186].Name := "мнбнйняхмн";
+
+  SetLine(127, 133, 8);
+  SetLine(186, 186, 8);
+
+  SetLink(127, 128, 2);
+  SetLink(128, 129, 3);
+  SetLink(129, 130, 2);
+  SetLink(130, 131, 3);
+  SetLink(131, 132, 2);
+  SetLink(132, 133, 3);
+  SetLink(186, 127, 3);
+
+
+  Lines[9] := "яепосунбяйн-рхлхпъгебяйюъ";
+  AccLines[9] := "яепосунбяйн-рхлхпъгебяйсч";
+
+  Stations[134].Name := "юкрстэебн";
+  Stations[135].Name := "ахахпебн";
+  Stations[136].Name := "нрпюдмне";
+  Stations[137].Name := "бкюдшйхмн";
+  Stations[138].Name := "оерпнбяйн-пюгслнбяйюъ";
+  Stations[139].Name := "рхлхпъгебяйюъ";
+  Stations[140].Name := "длхрпнбяйюъ";
+  Stations[141].Name := "яюбекнбяйюъ";
+  Stations[142].Name := "лемдекеебяйюъ";
+  Stations[143].Name := "жбермни аскэбюп";
+  Stations[144].Name := "веунбяйюъ";
+  Stations[145].Name := "анпнбхжйюъ";
+  Stations[146].Name := "онкъмйю";
+  Stations[147].Name := "яепосунбяйюъ";
+  Stations[148].Name := "рскэяйюъ";
+  Stations[149].Name := "мюцюрхмяйюъ";
+  Stations[150].Name := "мюцнпмюъ";
+  Stations[151].Name := "мюухлнбяйхи опняоейр";
+  Stations[152].Name := "яебюярнонкэяйюъ";
+  Stations[153].Name := "вепрюмнбяйюъ";
+  Stations[154].Name := "чфмюъ";
+  Stations[155].Name := "опюфяйюъ";
+  Stations[156].Name := "скхжю юйюделхйю ъмцекъ";
+  Stations[157].Name := "юммхмн";
+  Stations[158].Name := "аскэбюп длхрпхъ днмяйнцн";
+
+  SetLine(134, 158, 9);
+
+  SetLink(134, 135, 3);
+  SetLink(135, 136, 3);
+  SetLink(136, 137, 3);
+  SetLink(137, 138, 3);
+  SetLink(138, 139, 3);
+  SetLink(139, 140, 2);
+  SetLink(140, 141, 3);
+  SetLink(141, 142, 2);
+  SetLink(142, 143, 2);
+  SetLink(143, 144, 2);
+  SetLink(144, 145, 3);
+  SetLink(145, 146, 2);
+  SetLink(146, 147, 2);
+  SetLink(147, 148, 3);
+  SetLink(148, 149, 4);
+  SetLink(149, 150, 2);
+  SetLink(150, 151, 2);
+  SetLink(151, 152, 2);
+  SetLink(152, 153, 2);
+  SetLink(153, 154, 3);
+  SetLink(154, 155, 2);
+  SetLink(155, 156, 3);
+  SetLink(156, 157, 2);
+  SetLink(157, 158, 2);
+
+
+  Lines[10] := "кчакхмяйюъ";
+  AccLines[10] := "кчакхмяйсч";
+
+  Stations[159].Name := "люпэхмю пныю";
+  Stations[160].Name := "днярнебяйюъ";
+  Stations[161].Name := "рпсамюъ";
+  Stations[162].Name := "яперемяйхи аскэбюп";
+  Stations[163].Name := "вйюкнбяйюъ";
+  Stations[164].Name := "пхляйюъ";
+  Stations[165].Name := "йпеярэъмяйюъ гюярюбю";
+  Stations[166].Name := "дсапнбйю";
+  Stations[167].Name := "йнфсунбяйюъ";
+  Stations[168].Name := "оевюрмхйх";
+  Stations[169].Name := "бнкфяйюъ";
+  Stations[170].Name := "кчакхмн";
+  Stations[171].Name := "апюрхякюбяйюъ";
+  Stations[172].Name := "люпэхмн";
+  Stations[183].Name := "анпхянбн";
+  Stations[184].Name := "ьхохкнбяйюъ";
+  Stations[185].Name := "гъакхйнбн";
+
+  SetLine(159, 172, 10);
+  SetLine(183, 185, 10);
+
+  SetLink(159, 160, 4);
+  SetLink(160, 161, 4);
+  SetLink(161, 162, 3);
+  SetLink(162, 163, 3);
+  SetLink(163, 164, 3);
+  SetLink(164, 165, 3);
+  SetLink(165, 166, 2);
+  SetLink(166, 167, 2);
+  SetLink(167, 168, 4);
+  SetLink(168, 169, 3);
+  SetLink(169, 170, 3);
+  SetLink(170, 171, 3);
+  SetLink(171, 172, 2);
+  SetLink(172, 183, 2);
+  SetLink(183, 184, 2);
+  SetLink(184, 185, 2);
+
+
+  Lines[11] := "йюунбяйюъ";
+  AccLines[11] := "йюунбяйсч";
+
+  Stations[173].Name := "йюьхпяйюъ";
+  Stations[174].Name := "бюпьюбяйюъ";
+  Stations[175].Name := "йюунбяйюъ";
+
+  SetLine(173, 175, 11);
+
+  SetLink(173, 174, 3);
+  SetLink(174, 175, 3);
+
+
+  Lines[12] := "асрнбяйюъ";
+  AccLines[12] := "асрнбяйсч";
+
+  Stations[176].Name := "скхжю ярюпнйювюкнбяйюъ";
+  Stations[177].Name := "скхжю яйнаекебяйюъ";
+  Stations[178].Name := "аскэбюп юдлхпюкю сьюйнбю";
+  Stations[179].Name := "скхжю цнпвюйнбю";
+  Stations[180].Name := "асмхмяйюъ юккеъ";
+
+  SetLine(176, 180, 12);
+
+  SetLink(176, 177, 4);
+  SetLink(177, 178, 1);
+  SetLink(178, 179, 2);
+  SetLink(179, 180, 2);
+
+
+  Stations[181].Name := "бшярюбнвмюъ";
+  Stations[182].Name := "лефдсмюпндмюъ";
+
+  SetLine(181, 182, 4);
+
+  SetLink( 68, 181, 4);
+  SetLink(181, 182, 2);
+
+  (*ОЕПЕУНДШ*)
+
+  SetLink( 49,  68, 4);
+  SetLink( 49,  72, 4);
+  SetLink( 68,  72, 4);
+  SetLink( 73, 116, 3);
+  SetLink( 26,  74, 3);
+  SetLink( 75, 142, 3);
+  SetLink( 76,  91, 3);
+  SetLink( 14,  77, 5);
+  SetLink( 53,  78, 4);
+  SetLink( 53, 163, 3);
+  SetLink( 78, 163, 4);
+  SetLink( 79, 120, 3);
+  SetLink( 79, 132, 3);
+  SetLink(120, 132, 3);
+  SetLink( 31,  80, 3);
+  SetLink( 81, 147, 3);
+  SetLink( 82,  96, 3);
+  SetLink(  7,  83, 3);
+  SetLink(158, 176, 2);
+  SetLink(152, 175, 1);
+  SetLink( 34, 173, 1);
+  SetLink(121, 165, 3);
+  SetLink(131, 164, 2);
+  SetLink( 46,  61, 3);
+  SetLink(143, 161, 2);
+  SetLink( 11, 118, 3);
+  SetLink( 94, 119, 1);
+  SetLink( 10,  29, 4);
+  SetLink( 29,  52, 3);
+  SetLink( 95, 133, 1);
+  SetLink( 30,  95, 2);
+  SetLink( 30, 133, 2);
+  SetLink(117, 144, 3);
+  SetLink( 28, 117, 2);
+  SetLink( 28, 144, 3);
+  SetLink( 12,  93, 3);
+  SetLink( 12, 162, 3);
+  SetLink( 93, 162, 3);
+  SetLink( 51,  71, 3);
+  SetLink(  9,  71, 2);
+  SetLink(  9, 145, 5);
+  SetLink( 51, 145, 2);
+  SetLink(  9,  51, 4);
+  SetLink(185,  39, 2);
+
+END Init;
+
+PROCEDURE Sort(): INTEGER;
+VAR i, count: INTEGER;
+
+  PROCEDURE Add(Name: STRING);
+  VAR i: INTEGER;
+  BEGIN
+    i := 1;
+    WHILE (i <= count) & (StationsSort[i] # Name) DO
+      INC(i);
+    END;
+    IF i > count THEN
+      INC(count);
+      StationsSort[count] := Name;
+    END;
+  END Add;
+
+  PROCEDURE sort(n: INTEGER);
+  VAR step, i: INTEGER; exch: BOOLEAN; a: STRING;
+  BEGIN
+    step := 1;
+    exch := TRUE;
+    WHILE exch & (step <= n) DO
+      exch := FALSE;
+      FOR i := 1 TO n - step DO
+        IF StationsSort[i] > StationsSort[i + 1] THEN
+          exch := TRUE;
+          a := StationsSort[i];
+          StationsSort[i] := StationsSort[i + 1];
+          StationsSort[i + 1] := a;
+        END;
+      END;
+      INC(step);
+    END;
+  END sort;
+
+BEGIN
+  count := 0;
+  i := 1;
+  WHILE (i < SCOUNT) & (Stations[i].Name # "") DO
+    Add(Stations[i].Name);
+    INC(i);
+  END;
+  sort(count);
+  RETURN count
+END Sort;
+
+PROCEDURE OutList(count: INTEGER);
+VAR i, j: INTEGER;
+BEGIN
+  j := (count DIV 2) + (count MOD 2);
+  FOR i := 1 TO j - 1 DO
+    Out.Int(i, 3);
+    OutString(" ");
+    OutString(StationsSort[i]);
+    Console.Cursor(40, i - 1);
+    Out.Int(i + j, 3);
+    OutString(" ");
+    OutString(StationsSort[i + j]);
+    Out.Ln();
+  END;
+  Out.Int(j, 3);
+  OutString(" ");
+  OutString(StationsSort[j]);
+  IF count MOD 2 = 0 THEN
+    Console.Cursor(40, j - 1);
+    Out.Int(count, 3);
+    OutString(" ");
+    OutString(StationsSort[count]);
+  END;
+  Out.Ln;
+END OutList;
+
+PROCEDURE Find(n: INTEGER): INTEGER;
+VAR i, c, m: INTEGER; a: ARRAY 10 OF INTEGER;
+BEGIN
+  c := 0;
+  FOR i := 1 TO SCOUNT - 1 DO
+    IF StationsSort[n] = Stations[i].Name THEN
+      INC(c);
+      a[c] := i;
+    END
+  END;
+  IF c = 1 THEN
+    m := 1
+  ELSE
+    FOR i := 1 TO c DO
+      Out.Int(i, 2);
+      Out.Char(" ");
+      OutString(Lines[Stations[a[i]].Line]);
+      Out.Ln;
+    END;
+    REPEAT
+      OutString("СРНВМХРЕ КХМХЧ (МНЛЕП):   ");
+      In.Int(m);
+      IF (m < 1) OR (m > c) THEN
+        m := -1;
+        OutString("МЕОПЮБХКЭМШИ МНЛЕП");
+        Out.Ln
+      END
+    UNTIL m # -1
+  END
+  RETURN a[m]
+END Find;
+
+PROCEDURE Dijkstra(a, b: INTEGER);
+CONST Inf = 1.0E+10;
+VAR i, j, cur, line: INTEGER; sum: REAL; Matrix1: MATRIX;
+    A: ARRAY SCOUNT OF RECORD Label: REAL; Enabled: BOOLEAN END;
+
+  PROCEDURE Min(): INTEGER;
+  VAR i: INTEGER; min: INTEGER; minv: REAL;
+  BEGIN
+    min := 0;
+    minv := Inf;
+    FOR i := 1 TO SCOUNT - 1 DO
+      IF A[i].Enabled & (A[i].Label < minv) THEN
+        min := i;
+        minv := A[i].Label;
+      END;
+    END;
+    RETURN min
+  END Min;
+
+BEGIN
+
+  FOR i := 1 TO SCOUNT - 1 DO
+    A[i].Label := Inf;
+    A[i].Enabled := TRUE;
+  END;
+
+  A[a].Label := 0.0E0;
+
+  cur := Min();
+  WHILE (cur # 0) & (cur # b) DO
+    sum := A[cur].Label;
+    FOR i := 1 TO SCOUNT - 1 DO
+      IF A[i].Enabled & (Matrix[cur, i] # 0.0E0) &
+        (A[i].Label > Matrix[cur, i] + sum) THEN
+        FOR j := 1 TO SCOUNT - 1 DO
+          Matrix1[j, i] := 0.0E0;
+        END;
+        Matrix1[cur, i] := 1.0E0;
+        A[i].Label := Matrix[cur, i] + sum;
+      END;
+    END;
+    A[cur].Enabled := FALSE;
+    cur := Min();
+  END;
+
+  cur := b;
+  line := Stations[b].Line;
+  OutString(Stations[b].Name); Out.Ln;
+  WHILE cur # a DO
+    i := 1;
+    WHILE i < SCOUNT DO
+      IF Matrix1[i, cur] = 1.0E0 THEN
+        IF Stations[i].Line # line THEN
+          Out.Ln;
+          OutString("ОЕПЕУНД МЮ ");
+          OutString(AccLines[Stations[i].Line]);
+          OutString(" КХМХЧ");
+          Out.Ln;
+          Out.Ln;
+          line := Stations[i].Line;
+        END;
+        OutString(Stations[i].Name); Out.Ln;
+        cur := i;
+        i := SCOUNT;
+      END;
+      INC(i)
+    END
+  END;
+
+  Out.Ln;
+  OutString("БПЕЛЪ = ");
+  Out.Int(FLOOR(A[b].Label), 0);
+  OutString(" ЛХМ.");
+  Out.Ln;
+
+END Dijkstra;
+
+PROCEDURE input(VAR n: INTEGER; str: ARRAY OF CHAR);
+BEGIN
+  REPEAT
+    OutString(str);
+    In.Int(n);
+    IF (n < 1) OR (n > sortcount) THEN
+      n := -1;
+      OutString("МЕОПЮБХКЭМШИ МНЛЕП");
+      Out.Ln;
+    ELSE
+      n := Find(n)
+    END
+  UNTIL n # -1
+END input;
+
+PROCEDURE Main;
+VAR a, b: INTEGER; c: CHAR;
+BEGIN
+  In.Open;
+  Out.Open;
+  Init();
+  sortcount := Sort();
+  REPEAT
+    Console.Cls;
+    OutList(sortcount);
+    Out.Ln;
+    input(a, "ХЯУНДМШИ ОСМЙР (МНЛЕП):   ");
+    input(b, "ОСМЙР МЮГМЮВЕМХЪ (МНЛЕП): ");
+    Console.Cls;
+    OutString("НР "); OutString(Stations[a].Name);
+    OutString(" ("); OutString(Lines[Stations[a].Line]); OutString(" КХМХЪ)"); Out.Ln;
+    OutString("ДН "); OutString(Stations[b].Name);
+    OutString(" ("); OutString(Lines[Stations[b].Line]); OutString(" КХМХЪ)"); Out.Ln;
+    Out.Ln;
+    OutString("ЙПЮРВЮИЬХИ ЛЮПЬПСР:"); Out.Ln; Out.Ln;
+    Dijkstra(b, a);
+    Out.Ln;
+    OutString("ОНБРНПХРЭ? (y/n)");
+    In.Char(c);
+  UNTIL (c # "Y") & (c # "y");
+END Main;
+
+BEGIN
+  Main
+END MosMetro.

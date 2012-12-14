@@ -1,0 +1,10 @@
+MODULE HW;
+
+IMPORT RTL, In, Out;
+
+BEGIN
+  In.Open;
+  Out.Open;
+  Out.String("Hello, world!");
+  In.Ln
+END HW.

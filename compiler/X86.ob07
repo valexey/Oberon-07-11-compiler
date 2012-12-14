@@ -1,0 +1,1606 @@
+MODULE X86;
+
+IMPORT UTILS, sys := SYSTEM, SCAN;
+
+CONST
+
+  ADIM* = 5;
+
+  lxPlus = 301; lxMinus = 302; lxMult = 303; lxSlash = 304;
+  lxEQ = 314; lxNE = 315; lxGT = 321; lxGE = 322; lxLT = 323; lxLE = 324;
+
+  TINTEGER = 1; TREAL = 2; TLONGREAL = 3; TCHAR = 4; TSET = 5; TBOOLEAN = 6; TVOID = 7;
+  TNIL = 8; TCARD16 = 9; TSTRING = 10; TARRAY = 11; TRECORD = 12; TPOINTER = 13; TPROC = 14;
+
+  stABS* = 1; stODD* = 2; stLEN* = 3; stLSL* = 4; stASR* = 5; stROR* = 6; stFLOOR* = 7;
+  stFLT* = 8; stORD* = 9; stCHR* = 10; stLONG* = 11; stSHORT* = 12; stINC* = 13;
+  stDEC* = 14; stINCL* = 15; stEXCL* = 16; stCOPY* = 17; stNEW* = 18; stASSERT* = 19;
+  stPACK* = 20; stUNPK* = 21; stDISPOSE* = 22; stFABS* = 23; stINC1* = 24;
+  stDEC1* = 25; stASSERT1* = 26; stUNPK1* = 27; stPACK1* = 28;
+
+  sysBIT* = 103; sysLOADLIB* = 107; sysFREELIB* = 108; sysGETPROC* = 109; sysHALT* = 110;
+
+  JE = 84X; JECXZ = 0E3X; JMP* = 0E9X; CALL = 0E8X; JLE = 8EX; JGE = 8DX; JG = 8FX; JL = 8CX;
+
+  JCMD = 1; LCMD = 2; GCMD = 3; OCMD = 4; ECMD = 5;
+  PUSHEAX = 6; PUSHECX = 7; PUSHEDX = 8; POPEAX = 9; POPECX = 10; POPEDX = 11;
+  PUSHINT = 12;
+
+  _rset* = 0; _inset* = 1; _saverec* = 2; _fcmp* = 3; _checktype* = 4; _strcmp* = 5;
+  _lstrcmp* = 6; _rstrcmp* = 7; _savearr* = 8; _newrec* = 9; _disprec* = 10; _arrayidx* = 11;
+  _arrayrot* = 12; _assrt* = 13; _strcopy* = 14; _arrayidx1* = 15; _init* = 16; _close* = 17;
+  ASSRT = 18; hInstance = 19; SELFNAME = 20; RTABLE = 21; LoadLibrary = 22;
+  FreeLibrary = 23; GetProcAddress = 24; ExitProcess = 25; HALT = 26;
+
+TYPE
+
+  PROC = PROCEDURE (err: BOOLEAN);
+
+  ASMLINE = POINTER TO rASMLINE;
+
+  rASMLINE = RECORD (UTILS.rITEM)
+    cmd, clen, varadr, adr, tcmd, codeadr: INTEGER
+  END;
+
+  TFLT = ARRAY 2 OF INTEGER;
+
+  TIDX* = ARRAY ADIM OF INTEGER;
+
+  SECTIONNAME = ARRAY 8 OF CHAR;
+
+  SECTION = RECORD
+    name: SECTIONNAME;
+    size: INTEGER; (*точно*)
+    adr: INTEGER; (*MEM-4096*)
+    sizealign: INTEGER; (*FILE-512*)
+    OAPfile: INTEGER; (*FILE-512*)
+    reserved6, reserved7, reserved8, attrflags: INTEGER
+  END;
+
+  HEADER = RECORD
+    msdos: ARRAY 180 OF CHAR;
+    typecomp, seccount: sys.CARD16;
+    time, reserved1, reserved2: INTEGER;
+    PEoptsize, infflags, PEfile, compver: sys.CARD16;
+    codesize, datasize, initdatasize, startadr,
+    codeadr, rdataadr, loadadr, secalign, filealign,
+    oldestver, version, oldestverNT, reserved3,
+    filesize, headersize, dllcrc: INTEGER;
+    UI, reserved4: sys.CARD16;
+    stksize, stkalloc, heapsize, heapalloc: INTEGER;
+    reserved5, structcount: INTEGER;
+    structs: ARRAY 16 OF RECORD adr, size: INTEGER END;
+    sections: ARRAY 3 OF SECTION
+  END;
+
+  ETABLE = RECORD
+    reserved1, time, reserved2, dllnameoffset, firstnum, adrcount,
+    namecount, arradroffset, arrnameptroffset, arrnumoffset: INTEGER;
+    arradr: ARRAY 10000H OF INTEGER;
+    arrnameptr: ARRAY 10000H OF INTEGER;
+    arrnum: ARRAY 10000H OF sys.CARD16;
+    text: ARRAY 1000000 OF CHAR;
+    textlen, size: INTEGER
+  END;
+
+  RELOC = RECORD
+    Page, Size: INTEGER;
+    reloc: ARRAY 1024 OF sys.CARD16
+  END;
+
+VAR asmlist: UTILS.LIST; start: UTILS.ITEM; MemErr: PROC; dll, Const*: BOOLEAN;
+    Lcount, reccount, topstk: INTEGER; recarray: ARRAY 2048 OF INTEGER; current*: UTILS.ITEM;
+    callstk: ARRAY 1024, 2 OF UTILS.ITEM; OutFile: UTILS.FILENAME;
+    Code: ARRAY 3000000 OF CHAR; ccount: INTEGER; Data: ARRAY 3000000 OF CHAR; dcount: INTEGER;
+    Labels: ARRAY 3000000 OF INTEGER; rdata: ARRAY 1000H OF CHAR; Header: HEADER; etable: ETABLE;
+    ExecName: UTILS.FILENAME; LoadAdr: INTEGER; Reloc: ARRAY 1500000 OF CHAR; rcount: INTEGER;
+    RtlProc: ARRAY 18 OF INTEGER;
+
+PROCEDURE AddRtlProc*(idx, proc: INTEGER);
+BEGIN
+  RtlProc[idx] := proc
+END AddRtlProc;
+
+PROCEDURE InitExport;
+BEGIN
+  etable.firstnum := 0;
+  etable.reserved1 := 0;
+  etable.reserved2 := 0;
+  etable.adrcount := 0;
+  etable.namecount := 0;
+  etable.textlen := 0;
+  etable.time := 0;
+  etable.size := 0
+END InitExport;
+
+PROCEDURE IntToCard16(i: INTEGER): sys.CARD16;
+VAR w: sys.CARD16;
+BEGIN
+  sys.GET(sys.ADR(i), w)
+  RETURN w
+END IntToCard16;
+
+PROCEDURE CopyStr(VAR Dest: ARRAY OF CHAR; Source: ARRAY OF CHAR; VAR di: INTEGER; si: INTEGER);
+BEGIN
+  DEC(di);
+  REPEAT
+    INC(di);
+    Dest[di] := Source[si];
+    INC(si)
+  UNTIL Dest[di] = 0X
+END CopyStr;
+
+PROCEDURE exch(VAR a, b: INTEGER);
+VAR c: INTEGER;
+BEGIN
+  c := a;
+  a := b;
+  b := c
+END exch;
+
+PROCEDURE Sort(VAR NamePtr, Adr: ARRAY OF INTEGER; Text: ARRAY OF CHAR; LB, RB: INTEGER);
+VAR L, R: INTEGER;
+
+  PROCEDURE strle(s1, s2: INTEGER): BOOLEAN;
+  VAR S1, S2: ARRAY 256 OF CHAR; i: INTEGER;
+  BEGIN
+    i := 0;
+    CopyStr(S1, Text, i, s1);
+    i := 0;
+    CopyStr(S2, Text, i, s2)
+    RETURN S1 <= S2
+  END strle;
+
+BEGIN
+  IF LB < RB THEN
+    L := LB;
+    R := RB;
+    REPEAT
+      WHILE (L < RB) & strle(NamePtr[L], NamePtr[LB]) DO
+        INC(L)
+      END;
+      WHILE (R > LB) & strle(NamePtr[LB], NamePtr[R]) DO
+        DEC(R)
+      END;
+      IF L < R THEN
+        exch(NamePtr[L], NamePtr[R]);
+        exch(Adr[L], Adr[R])
+      END
+    UNTIL L >= R;
+    IF R > LB THEN
+      exch(NamePtr[LB], NamePtr[R]);
+      exch(Adr[LB], Adr[R]);
+      Sort(NamePtr, Adr, Text, LB, R - 1)
+    END;
+    Sort(NamePtr, Adr, Text, R + 1, RB)
+  END
+END Sort;
+
+PROCEDURE PackExport(Name: ARRAY OF CHAR);
+VAR i: INTEGER;
+BEGIN
+  Sort(etable.arrnameptr, etable.arradr, etable.text, 0, etable.namecount - 1);
+  FOR i := 0 TO etable.namecount - 1 DO
+    etable.arrnum[i] := IntToCard16(i)
+  END;
+  etable.size := 40 + etable.adrcount * 4 + etable.namecount * 6;
+  etable.arradroffset := 40;
+  etable.arrnameptroffset := 40 + etable.adrcount * 4;
+  etable.arrnumoffset := etable.arrnameptroffset + etable.namecount * 4;
+  etable.dllnameoffset := etable.size + etable.textlen;
+  CopyStr(etable.text, Name, etable.textlen, 0);
+  INC(etable.textlen);
+  FOR i := 0 TO etable.namecount - 1 DO
+    etable.arrnameptr[i] := etable.arrnameptr[i] + etable.size
+  END;
+  etable.size := etable.size + etable.textlen
+END PackExport;
+
+PROCEDURE ProcExport*(Number: INTEGER; Name: UTILS.STRING);
+BEGIN
+  IF dll THEN
+    etable.arradr[etable.adrcount] := Number;
+    INC(etable.adrcount);
+    etable.arrnameptr[etable.namecount] := etable.textlen;
+    INC(etable.namecount);
+    CopyStr(etable.text, Name, etable.textlen, 0);
+    INC(etable.textlen)
+  END
+END ProcExport;
+
+PROCEDURE Err(code: INTEGER);
+BEGIN
+  CASE code OF
+  |1: UTILS.OutString("ошибка: невозможно создать файл (возможно файл открыт)")
+  |2: UTILS.OutString("ошибка: невозможно записать файл")
+  END;
+  UTILS.Ln;
+  UTILS.OutString(OutFile);
+  UTILS.Ln;
+  sys.HALT(1)
+END Err;
+
+PROCEDURE Align(n, m: INTEGER): INTEGER;
+BEGIN
+  RETURN n + (m - n MOD m) MOD m
+END Align;
+
+PROCEDURE PutReloc(R: RELOC);
+VAR i: INTEGER;
+BEGIN
+  sys.PUT(sys.ADR(Reloc[rcount]), R.Page);
+  INC(rcount, 4);
+  sys.PUT(sys.ADR(Reloc[rcount]), R.Size);
+  INC(rcount, 4);
+  FOR i := 0 TO (R.Size - 8) DIV 2 - 1 DO
+    sys.PUT(sys.ADR(Reloc[rcount]), R.reloc[i]);
+    INC(rcount, 2)
+  END
+END PutReloc;
+
+PROCEDURE InitArray(VAR adr: INTEGER; chars: ARRAY OF CHAR);
+VAR i, x, n: INTEGER;
+BEGIN
+  n := LEN(chars) - 1;
+  i := 0;
+  WHILE (i < n) & (chars[i] # 0X) & (chars[i + 1] # 0X) DO
+    x := SCAN.hex(chars[i]) * 16 + SCAN.hex(chars[i + 1]);
+    sys.PUT(adr, CHR(x));
+    INC(adr);
+    INC(i, 2)
+  END
+END InitArray;
+
+PROCEDURE Write(F, A, N: INTEGER);
+BEGIN
+  IF UTILS.Write(F, A, N) # N THEN
+    Err(2)
+  END
+END Write;
+
+PROCEDURE zerowrite(F, n: INTEGER);
+VAR i: INTEGER; z: CHAR;
+BEGIN
+  z := 0X;
+  FOR i := 1 TO n DO
+    Write(F, sys.ADR(z), 1)
+  END
+END zerowrite;
+
+PROCEDURE SetSection(VAR Section: SECTION; name: SECTIONNAME; size, adr, sizealign, OAPfile, attrflags: INTEGER);
+BEGIN
+  Section.name := name;
+  Section.size := size;
+  Section.adr := adr;
+  Section.sizealign := sizealign;
+  Section.OAPfile := OAPfile;
+  Section.attrflags := attrflags;
+END SetSection;
+
+PROCEDURE WriteFile(FName: ARRAY OF CHAR; UI, stksize, codesize, datasize, rdatasize, gsize: INTEGER);
+CONST textattr = 60000020H; rdataattr = 40000040H; dataattr = 0C0000040H; relocattr = 42000040H;
+VAR i, j, F, adr, acodesize, compver, version, stkalloc, heapsize, heapalloc: INTEGER; cur: UTILS.ITEM; RelocSection: SECTION;
+BEGIN
+  compver := 0;
+  version := 0;
+  stkalloc := stksize;
+  heapsize := 100000H;
+  heapalloc := 100000H;
+  acodesize := Align(codesize, 1000H) + 1000H;
+  adr := sys.ADR(rdata);
+  InitArray(adr, "BE0000008E0000009C000000AC0000000000000074000000000000006C000000");
+  InitArray(adr, "00000000000000008200000014000000580000000000000000000000CC000000");
+  InitArray(adr, "000000000000000000000000000000000000000000000000BE0000008E000000");
+  InitArray(adr, "9C000000AC0000000000000074000000000000009D014D657373616765426F78");
+  InitArray(adr, "41007573657233322E646C6C000080004578697450726F6365737300A4014C6F");
+  InitArray(adr, "61644C6962726172794100001F0147657450726F63416464726573730000B300");
+  InitArray(adr, "467265654C696272617279006B65726E656C33322E646C6C0000000000000000");
+  sys.PUT(sys.ADR(rdata[0]), acodesize + 0BEH);
+  sys.PUT(sys.ADR(rdata[4]), acodesize + 08EH);
+  sys.PUT(sys.ADR(rdata[8]), acodesize + 09CH);
+  sys.PUT(sys.ADR(rdata[12]), acodesize + 0ACH);
+  sys.PUT(sys.ADR(rdata[20]), acodesize + 074H);
+  sys.PUT(sys.ADR(rdata[28]), acodesize + 06CH);
+  sys.PUT(sys.ADR(rdata[40]), acodesize + 082H);
+  sys.PUT(sys.ADR(rdata[44]), acodesize + 014H);
+  sys.PUT(sys.ADR(rdata[48]), acodesize + 058H);
+  sys.PUT(sys.ADR(rdata[60]), acodesize + 0CCH);
+  sys.PUT(sys.ADR(rdata[64]), acodesize + 000H);
+  sys.PUT(sys.ADR(rdata[88]), acodesize + 0BEH);
+  sys.PUT(sys.ADR(rdata[92]), acodesize + 08EH);
+  sys.PUT(sys.ADR(rdata[96]), acodesize + 09CH);
+  sys.PUT(sys.ADR(rdata[100]), acodesize + 0ACH);
+  sys.PUT(sys.ADR(rdata[108]), acodesize + 074H);
+  adr := sys.ADR(Header.msdos);
+  InitArray(adr, "4D5A90000300000004000000FFFF0000B8000000000000004000000000000000");
+  InitArray(adr, "00000000000000000000000000000000000000000000000000000000B0000000");
+  InitArray(adr, "0E1FBA0E00B409CD21B8014CCD21546869732070726F6772616D2063616E6E6F");
+  InitArray(adr, "742062652072756E20696E20444F53206D6F64652E0D0D0A2400000000000000");
+  InitArray(adr, "5DCF9F8719AEF1D419AEF1D419AEF1D497B1E2D413AEF1D4E58EE3D418AEF1D4");
+  InitArray(adr, "5269636819AEF1D4000000000000000050450000");
+  Header.typecomp := IntToCard16(014CH);
+  IF dll THEN
+    Header.seccount := IntToCard16(0004H);
+    Header.infflags := IntToCard16(210EH)
+  ELSE
+    Header.seccount := IntToCard16(0003H);
+    Header.infflags := IntToCard16(010FH)
+  END;
+  Header.time := UTILS.Now();
+  Header.reserved1 := 0;
+  Header.reserved2 := 0;
+  Header.PEoptsize := IntToCard16(00E0H);
+  Header.PEfile := IntToCard16(010BH);
+  Header.compver := IntToCard16(compver);
+  Header.codesize := Align(codesize, 200H);
+  Header.datasize := Align(datasize + gsize, 200H) + Align(rdatasize, 200H) + Align(rcount, 200H);
+  Header.initdatasize := 0;
+  Header.startadr := 1000H;
+  Header.codeadr := 1000H;
+  Header.rdataadr := Header.codeadr + Align(codesize, 1000H);
+  Header.loadadr := LoadAdr;
+  Header.secalign := 1000H;
+  Header.filealign := 0200H;
+  Header.oldestver := 0004H;
+  Header.version := version;
+  Header.oldestverNT := 0004H;
+  Header.reserved3 := 0;
+  Header.filesize := Align(codesize, 1000H) + Align(datasize + gsize, 1000H) + Align(rdatasize, 1000H) + Align(rcount, 1000H) + 1000H;
+  Header.headersize := 0400H;
+  Header.dllcrc := 0;
+  Header.UI := IntToCard16(UI);
+  Header.reserved4 := IntToCard16(0);
+  Header.stksize := stksize;
+  Header.stkalloc := stkalloc;
+  Header.heapsize := heapsize;
+  Header.heapalloc := heapalloc;
+  Header.reserved5 := 0;
+  Header.structcount := 10H;
+  FOR i := 0 TO 15 DO
+    Header.structs[i].adr := 0;
+    Header.structs[i].size := 0
+  END;
+  IF dll THEN
+    Header.structs[0].adr := Header.rdataadr + 0DAH;
+    Header.structs[0].size := etable.size
+  END;
+  Header.structs[1].adr := Header.rdataadr + 1CH;
+  Header.structs[1].size := 3CH;
+  Header.structs[12].adr := Header.rdataadr;
+  Header.structs[12].size := 1CH;
+
+  FOR i := 0 TO 2 DO
+    FOR j := 0 TO 7 DO
+      Header.sections[i].name[j] := 0X
+    END;
+    Header.sections[i].reserved6 := 0;
+    Header.sections[i].reserved7 := 0;
+    Header.sections[i].reserved8 := 0
+  END;
+
+  SetSection(Header.sections[0], ".text", codesize, 1000H, Align(codesize, 200H), 400H, textattr);
+  SetSection(Header.sections[1], ".rdata", rdatasize, Align(codesize, 1000H) + 1000H, Align(rdatasize, 200H),
+    Align(codesize, 200H) + 400H, rdataattr);
+  SetSection(Header.sections[2], ".data", datasize + gsize, Align(codesize, 1000H) + Align(rdatasize, 1000H) + 1000H,
+    Align(datasize, 200H), Align(codesize, 200H) + Align(rdatasize, 200H) + 400H, dataattr);
+
+  IF dll THEN
+    FOR i := 0 TO 7 DO
+      RelocSection.name[i] := 0X
+    END;
+    RelocSection.reserved6 := 0;
+    RelocSection.reserved7 := 0;
+    RelocSection.reserved8 := 0;
+    SetSection(RelocSection, ".reloc", rcount, Header.sections[2].adr + Align(datasize + gsize, 1000H), Align(rcount, 200H),
+      Header.sections[2].OAPfile + Align(datasize, 200H), relocattr);
+    Header.structs[5].adr := RelocSection.adr;
+    Header.structs[5].size := rcount
+  END;
+
+  F := UTILS.CreateF(FName);
+  IF F <= 0 THEN
+    Err(1)
+  END;
+
+  Write(F, sys.ADR(Header), sys.SIZE(HEADER));
+  IF dll THEN
+    Write(F, sys.ADR(RelocSection), sys.SIZE(SECTION));
+    zerowrite(F, Align(sys.SIZE(HEADER) + sys.SIZE(SECTION), 200H) - (sys.SIZE(HEADER) + sys.SIZE(SECTION)))
+  ELSE
+    zerowrite(F, Align(sys.SIZE(HEADER), 200H) - sys.SIZE(HEADER))
+  END;
+
+  cur := asmlist.First;
+  WHILE cur # NIL DO
+    Write(F, sys.ADR(Code[cur(ASMLINE).cmd]), cur(ASMLINE).clen);
+    cur := cur.Next
+  END;
+  zerowrite(F, Align(codesize, 200H) - codesize);
+  Write(F, sys.ADR(rdata), 0DAH);
+  IF dll THEN
+    etable.time := Header.time;
+    Write(F, sys.ADR(etable), 40);
+    Write(F, sys.ADR(etable.arradr), etable.adrcount * 4);
+    Write(F, sys.ADR(etable.arrnameptr), etable.namecount * 4);
+    Write(F, sys.ADR(etable.arrnum), etable.namecount * 2);
+    Write(F, sys.ADR(etable.text), etable.textlen)
+  END;
+  zerowrite(F, Align(rdatasize, 200H) - rdatasize);
+  Write(F, sys.ADR(Data[1]), datasize);
+  zerowrite(F, Align(datasize, 200H) - datasize);
+  IF dll THEN
+    Write(F, sys.ADR(Reloc), rcount);
+    zerowrite(F, Align(rcount, 200H) - rcount)
+  END;
+  UTILS.CloseF(F)
+END WriteFile;
+
+PROCEDURE New;
+VAR nov: ASMLINE;
+BEGIN
+  NEW(nov);
+  MemErr(nov = NIL);
+  nov.cmd := ccount;
+  nov.clen := 0;
+  nov.varadr := 0;
+  nov.adr := 0;
+  nov.tcmd := 0;
+  nov.codeadr := 0;
+  asmlist.Insert(asmlist, nov, current);
+  current := current.Next
+END New;
+
+PROCEDURE Empty(varadr: INTEGER);
+BEGIN
+  New;
+  current(ASMLINE).clen := 0;
+  current(ASMLINE).tcmd := ECMD;
+  current(ASMLINE).varadr := varadr
+END Empty;
+
+PROCEDURE OutByte(byte: INTEGER);
+BEGIN
+  New;
+  current(ASMLINE).clen := 1;
+  Code[ccount] := CHR(ROR(LSL(byte, 24), 24));
+  INC(ccount)
+END OutByte;
+
+PROCEDURE OutInt(int: INTEGER);
+BEGIN
+  New;
+  current(ASMLINE).clen := 4;
+  sys.PUT(sys.ADR(Code[ccount]), int);
+  INC(ccount, 4)
+END OutInt;
+
+PROCEDURE PushEAX;
+BEGIN
+  OutByte(50H);
+  current(ASMLINE).tcmd := PUSHEAX
+END PushEAX;
+
+PROCEDURE PushECX;
+BEGIN
+  OutByte(51H);
+  current(ASMLINE).tcmd := PUSHECX
+END PushECX;
+
+PROCEDURE PushEDX;
+BEGIN
+  OutByte(52H);
+  current(ASMLINE).tcmd := PUSHEDX
+END PushEDX;
+
+PROCEDURE PopEAX;
+BEGIN
+  OutByte(58H);
+  current(ASMLINE).tcmd := POPEAX
+END PopEAX;
+
+PROCEDURE PopECX;
+BEGIN
+  OutByte(59H);
+  current(ASMLINE).tcmd := POPECX
+END PopECX;
+
+PROCEDURE PopEDX;
+BEGIN
+  OutByte(5AH);
+  current(ASMLINE).tcmd := POPEDX
+END PopEDX;
+
+PROCEDURE OutCode(cmd: ARRAY OF CHAR);
+VAR a, b: INTEGER;
+BEGIN
+  New;
+  a := sys.ADR(Code[ccount]);
+  b := a;
+  InitArray(a, cmd);
+  ccount := a - b + ccount;
+  current(ASMLINE).clen := a - b
+END OutCode;
+
+PROCEDURE Del*(last: UTILS.ITEM);
+BEGIN
+  last.Next := current.Next;
+  IF current = asmlist.Last THEN
+    asmlist.Last := last
+  END;
+  current := last
+END Del;
+
+PROCEDURE NewLabel*(): INTEGER;
+BEGIN
+  INC(Lcount)
+  RETURN Lcount
+END NewLabel;
+
+PROCEDURE On*;
+BEGIN
+  Const := FALSE
+END On;
+
+PROCEDURE Off*;
+BEGIN
+  Const := TRUE
+END Off;
+
+PROCEDURE PushCall*(asmline: UTILS.ITEM);
+BEGIN
+  New;
+  callstk[topstk][0] := asmline;
+  callstk[topstk][1] := current;
+  INC(topstk)
+END PushCall;
+
+PROCEDURE Param*;
+BEGIN
+  current := callstk[topstk - 1][0](ASMLINE)
+END Param;
+
+PROCEDURE EndCall*;
+BEGIN
+  current := callstk[topstk - 1][1](ASMLINE);
+  DEC(topstk)
+END EndCall;
+
+PROCEDURE Init*(mem: PROC; UI: INTEGER);
+VAR nov: ASMLINE; i: INTEGER;
+BEGIN
+  InitExport;
+  dcount := 1;
+  ccount := 0;
+  rcount := 0;
+  Const := FALSE;
+  dll := UI = 1;
+  MemErr := mem;
+  Lcount := HALT;
+  recarray[0] := 0;
+  reccount := 0;
+  topstk := 0;
+  asmlist := UTILS.CreateList();
+  MemErr(asmlist = NIL);
+  NEW(nov);
+  MemErr(nov = NIL);
+  nov.clen := 0;
+  nov.cmd := 0;
+  asmlist.Push(asmlist, nov);
+  current := nov;
+  FOR i := 0 TO LEN(Labels) - 1 DO
+    Labels[i] := 0
+  END
+END Init;
+
+PROCEDURE datastr(str: ARRAY OF CHAR);
+VAR i, n: INTEGER;
+BEGIN
+  i := 0;
+  n := LEN(str);
+  WHILE (i < n) & (str[i] # 0X) DO
+    Data[dcount] := str[i];
+    INC(dcount);
+    INC(i)
+  END;
+  Data[dcount] := 0X;
+  INC(dcount)
+END datastr;
+
+PROCEDURE dataint(n: INTEGER);
+BEGIN
+  sys.PUT(sys.ADR(Data[dcount]), n);
+  INC(dcount, 4)
+END dataint;
+
+PROCEDURE jmp*(jamp: CHAR; label: INTEGER);
+VAR n: INTEGER;
+BEGIN
+  New;
+  CASE jamp OF
+  |JECXZ:
+    n := 2
+  |JMP, CALL:
+    n := 5
+  |JE, JLE, JGE, JG, JL:
+    Code[ccount] := 0FX;
+    INC(ccount);
+    n := 6
+  END;
+  current(ASMLINE).clen := n;
+  Code[ccount] := jamp;
+  INC(ccount);
+  current(ASMLINE).codeadr := sys.ADR(Code[ccount]);
+  current(ASMLINE).varadr := sys.ADR(Labels[label]);
+  current(ASMLINE).tcmd := JCMD;
+  INC(ccount, 4)
+END jmp;
+
+PROCEDURE Label*(label: INTEGER);
+BEGIN
+  New;
+  current(ASMLINE).varadr := sys.ADR(Labels[label]);
+  current(ASMLINE).tcmd := LCMD
+END Label;
+
+PROCEDURE CmdN(Number: INTEGER; a, b: CHAR; n: INTEGER);
+BEGIN
+  New;
+  Code[ccount] := a;
+  INC(ccount);
+  IF n = 6 THEN
+    Code[ccount] := b;
+    INC(ccount)
+  END;
+  current(ASMLINE).clen := n;
+  current(ASMLINE).codeadr := sys.ADR(Code[ccount]);
+  current(ASMLINE).varadr := sys.ADR(Labels[Number]);
+  current(ASMLINE).tcmd := OCMD;
+  INC(ccount, 4)
+END CmdN;
+
+PROCEDURE IntByte(bytecode, intcode: ARRAY OF CHAR; n: INTEGER);
+BEGIN
+  IF (n <= 127) & (n >= -128) THEN
+    OutCode(bytecode);
+    OutByte(n)
+  ELSE
+    OutCode(intcode);
+    OutInt(n)
+  END
+END IntByte;
+
+PROCEDURE Call*(proc: INTEGER; func, float: BOOLEAN; ccall, bases, level: INTEGER);
+VAR i: INTEGER;
+BEGIN
+  IF ccall # 0 THEN
+    FOR i := level TO level - bases + ORD(ccall = 1) + 1 BY -1 DO
+      IntByte("FF75", "FFB5", 4 * i + 4)
+    END;
+    IF ccall = 1 THEN
+      OutByte(55H)
+    END
+  END;
+  jmp(CALL, proc);
+  IF func THEN
+    IF ~float THEN
+      PushEAX
+    ELSE
+      OutCode("83EC08DD1C24")
+    END
+  END
+END Call;
+
+PROCEDURE CallRTL(Proc: INTEGER);
+BEGIN
+  New;
+  current(ASMLINE).clen := 5;
+  Code[ccount] := CALL;
+  INC(ccount);
+  current(ASMLINE).codeadr := sys.ADR(Code[ccount]);
+  current(ASMLINE).varadr := sys.ADR(RtlProc[Proc]);
+  current(ASMLINE).tcmd := JCMD;
+  INC(ccount, 4)
+END CallRTL;
+
+PROCEDURE CallAPI(Proc: INTEGER);
+BEGIN
+  CmdN(Proc, 0FFX, 015X, 6)
+END CallAPI;
+
+PROCEDURE PushInt*(n: INTEGER);
+BEGIN
+  CmdN(n, 68X, 0X, 5)
+END PushInt;
+
+PROCEDURE Prolog*(exename: UTILS.FILENAME);
+BEGIN
+  ExecName := exename;
+  Labels[hInstance] := -dcount;
+  dataint(0);
+  Labels[SELFNAME] := -dcount;
+  datastr(exename);
+  IF dll THEN
+    OutCode("558BEC837D0C007507");
+    CallRTL(_close);
+    OutCode("EB06837D0C017409B801000000C9C20C00")
+  END;
+  start := asmlist.Last;
+END Prolog;
+
+PROCEDURE AddRec*(base: INTEGER);
+BEGIN
+  INC(reccount);
+  recarray[reccount] := base
+END AddRec;
+
+PROCEDURE ifwh*(L: INTEGER);
+BEGIN
+  PopECX;
+  OutCode("83F900");
+  jmp(JE, L)
+END ifwh;
+
+PROCEDURE IfWhile*(L: INTEGER; orop: BOOLEAN);
+BEGIN
+  PopECX;
+  IF orop THEN
+    OutCode("E306")
+  ELSE
+    OutCode("E302EB06")
+  END;
+  PushECX;
+  jmp(JMP, L)
+END IfWhile;
+
+PROCEDURE newrec*;
+BEGIN
+  CallRTL(_newrec)
+END newrec;
+
+PROCEDURE disprec*;
+BEGIN
+  CallRTL(_disprec)
+END disprec;
+
+PROCEDURE String*(Number, Len: INTEGER; str: ARRAY OF CHAR);
+BEGIN
+  Labels[Number] := -dcount;
+  IF Len > 1 THEN
+    datastr(str)
+  ELSIF Len = 1 THEN
+    dataint(ORD(str[0]))
+  ELSE
+    dataint(0)
+  END
+END String;
+
+PROCEDURE ProcBeg*(Number, Local: INTEGER; Module: BOOLEAN);
+VAR i: INTEGER;
+BEGIN
+  IF Module THEN
+    Label(Number + 1)
+  ELSE
+    Label(Number);
+    OutCode("558BEC")
+  END;
+  IF Local > 12 THEN
+    IntByte("83EC", "81EC", Local);
+    OutCode("8BD733C08BFCB9");
+    OutInt(Local DIV 4);
+    OutCode("FCF3AB8BFA")
+  ELSE
+    FOR i := 4 TO Local BY 4 DO
+      OutCode("6A00")
+    END
+  END
+END ProcBeg;
+
+PROCEDURE ProcEnd*(Number, Param: INTEGER; func, float: BOOLEAN);
+BEGIN
+  IF func THEN
+    IF ~float THEN
+      PopEAX
+    ELSE
+      OutCode("DD0424")
+    END
+  END;
+  OutByte(0C9H);
+  IF Param = 0 THEN
+    OutByte(0C3H)
+  ELSE
+    OutByte(0C2H);
+    OutByte(Param MOD 256);
+    OutByte(Param DIV 256)
+  END
+END ProcEnd;
+
+PROCEDURE Module*(Name: UTILS.STRING; Number: INTEGER);
+BEGIN
+  String(Number + 2, UTILS.strlen(Name), Name);
+  jmp(JMP, Number + 1)
+END Module;
+
+PROCEDURE Asm*(s: ARRAY OF CHAR);
+BEGIN
+  current(ASMLINE).tcmd := 0;
+  current(ASMLINE).clen := 0;
+  OutCode(s)
+END Asm;
+
+PROCEDURE GlobalAdr*(offset: INTEGER);
+BEGIN
+  OutByte(68H);
+  OutInt(offset);
+  current(ASMLINE).codeadr := sys.ADR(Code[ccount - 4]);
+  current(ASMLINE).tcmd := GCMD
+END GlobalAdr;
+
+PROCEDURE Mono*(Number: INTEGER);
+BEGIN
+  PopEDX;
+  PushInt(Number)
+END Mono;
+
+PROCEDURE StrMono*;
+BEGIN
+  PopEDX;
+  OutCode("6A02");
+  PushEDX
+END StrMono;
+
+PROCEDURE PushConst*(Number: INTEGER);
+BEGIN
+  IntByte("6A", "68", Number);
+  current.Prev(ASMLINE).tcmd := PUSHINT;
+  current.Prev(ASMLINE).varadr := Number
+END PushConst;
+
+PROCEDURE PushSet*(s: SET);
+VAR n: INTEGER;
+BEGIN
+  sys.PUT(sys.ADR(n), s);
+  PushConst(n)
+END PushSet;
+
+PROCEDURE Not*;
+BEGIN
+  PopECX;
+  OutCode("E3046A00EB026A01")
+END Not;
+
+PROCEDURE NegSet*;
+BEGIN
+  OutCode("F71424")
+END NegSet;
+
+PROCEDURE Int*(Op: INTEGER);
+BEGIN
+  PopEDX;
+  CASE Op OF
+  |lxPlus:  OutCode("011424")
+  |lxMinus: OutCode("291424")
+  |lxMult:  OutCode("58F7EA"); PushEAX
+  END
+END Int;
+
+PROCEDURE Set*(Op: INTEGER);
+BEGIN
+  PopEDX;
+  OutCode("58");
+  CASE Op OF
+  |lxPlus:  OutCode("0B")
+  |lxMinus: OutCode("F7D223")
+  |lxMult:  OutCode("23")
+  |lxSlash: OutCode("33")
+  END;
+  OutCode("C2");
+  PushEAX
+END Set;
+
+PROCEDURE PushFlt*(x: LONGREAL);
+VAR f: TFLT;
+BEGIN
+  sys.PUT(sys.ADR(f), x);
+  PushConst(f[1]);
+  PushConst(f[0])
+END PushFlt;
+
+PROCEDURE farith*(op: INTEGER);
+VAR n: INTEGER;
+BEGIN
+  OutCode("DBE3DD442408DD0424DE");
+  CASE op OF
+  |lxPlus:  n := 0C1H
+  |lxMinus: n := 0E9H
+  |lxMult:  n := 0C9H
+  |lxSlash: n := 0F9H
+  END;
+  OutByte(n);
+  OutCode("DD5C240883C408")
+END farith;
+
+PROCEDURE fneg*;
+BEGIN
+  OutCode("DBE3DD0424D9E0DD1C24")
+END fneg;
+
+PROCEDURE OnError(n: INTEGER); (*17 bytes!!!*)
+BEGIN
+  OutByte(68H);
+  OutInt(UTILS.Line);
+  PushInt(UTILS.Unit + 2);
+  OutByte(6AH);
+  OutByte(n);
+  jmp(JMP, HALT)
+END OnError;
+
+PROCEDURE idivmod*(opmod: BOOLEAN);
+BEGIN
+  PopECX;
+  IF opmod THEN
+    OutCode("58E330538BD833D9C1FB1F8BD0C1FA1F83F9FF750C3D0000008075055B6A00EB23F7F983FB00740783FA00740203D15B52EB11")
+  ELSE
+    OutCode("58E32E538BD833D9C1FB1F8BD0C1FA1F83F9FF750B3D0000008075045B50EB22F7F983FB00740683FA007401485B50EB11")
+  END;
+  OnError(8)
+END idivmod;
+
+PROCEDURE rset*;
+BEGIN
+  CallRTL(_rset);
+  PushEAX
+END rset;
+
+PROCEDURE inset*;
+BEGIN
+  CallRTL(_inset);
+  PushEAX
+END inset;
+
+PROCEDURE Dup*;
+BEGIN
+  PopEDX;
+  PushEDX;
+  PushEDX
+END Dup;
+
+PROCEDURE Inclusion*(Op: INTEGER);
+BEGIN
+  PopEDX;
+  PopEAX;
+  IF Op = lxLE THEN
+    PushEDX
+  ELSE
+    PushEAX
+  END;
+  OutCode("0BC25933C8E3046A00EB026A01")
+END Inclusion;
+
+PROCEDURE NegInt*;
+BEGIN
+  OutCode("F71C24")
+END NegInt;
+
+PROCEDURE fcmp*(Op: INTEGER);
+BEGIN
+  CASE Op OF
+  |lxEQ: PushConst(0)
+  |lxNE: PushConst(1)
+  |lxLT: PushConst(2)
+  |lxGT: PushConst(3)
+  |lxLE: PushConst(4)
+  |lxGE: PushConst(5)
+  END;
+  CallRTL(_fcmp);
+  PushEAX
+END fcmp;
+
+PROCEDURE CmpInt*(Op: INTEGER);
+VAR n: INTEGER;
+BEGIN
+  OutCode("33C95A583BC20F");
+  CASE Op OF
+  |lxEQ: n := 94H
+  |lxNE: n := 95H
+  |lxLT: n := 9CH
+  |lxGT: n := 9FH
+  |lxLE: n := 9EH
+  |lxGE: n := 9DH
+  END;
+  OutByte(n);
+  OutCode("C1");
+  PushECX
+END CmpInt;
+
+PROCEDURE CallVar*(func, float: BOOLEAN);
+BEGIN
+  PopEDX;
+  OutCode("833A007511");
+  OnError(2);
+  OutCode("FF12");
+  IF func THEN
+    IF ~float THEN
+      PushEAX
+    ELSE
+      OutCode("83EC08DD1C24")
+    END
+  END
+END CallVar;
+
+PROCEDURE LocalAdr*(offset, bases: INTEGER);
+BEGIN
+  IF bases = 0 THEN
+    Empty(offset);
+    OutCode("8BD5")
+  ELSE
+    IntByte("8B55", "8B95", 4 * bases + 4)
+  END;
+  IntByte("83C2", "81C2", offset);
+  PushEDX;
+  IF bases = 0 THEN
+    Empty(offset)
+  END
+END LocalAdr;
+
+PROCEDURE Field*(offset: INTEGER);
+BEGIN
+  IF offset # 0 THEN
+    IntByte("830424", "810424", offset)
+  END
+END Field;
+
+PROCEDURE DerefType*(n: INTEGER);
+BEGIN
+  IntByte("8B5424", "8B9424", n);
+  OutCode("FF72FC")
+END DerefType;
+
+PROCEDURE Guard*(T: INTEGER; Check: BOOLEAN);
+BEGIN
+  PushConst(T);
+  CallRTL(_checktype);
+  IF Check THEN
+    PushEAX
+  ELSE
+    OutCode("83F8007511");
+    OnError(3)
+  END
+END Guard;
+
+PROCEDURE StProc*(proc, assrt: INTEGER);
+BEGIN
+  CASE proc OF
+  |stINC:   PopEDX; OutCode("588B0803CA8908")
+  |stDEC:   PopEDX; OutCode("588B082BCA8908")
+  |stINC1:  PopEDX; OutCode("FF02")
+  |stDEC1:  PopEDX; OutCode("FF0A")
+  |stINCL:  PopEDX; OutCode("580910")
+  |stEXCL:  PopEDX; OutCode("582110")
+  |sysBIT:  PopECX; OutCode("5A585333DB8A18E3050FABD3EB030FB3D388185B")
+  |stPACK:  PopEAX; OutCode("5A50DBE3DB0424DD02D9FDDD1A"); PopEDX
+  |stPACK1: PopEAX; OutCode("5A50DBE3DB0424D902D9FDD91A"); PopEDX
+  |stUNPK:  PopEAX; OutCode("5ADBE3DD02D9F4DD1ADB18")
+  |stUNPK1: PopEAX; OutCode("5ADBE3D902D9F4D91ADB18")
+  |stCOPY:  CallRTL(_strcopy)
+  |stASSERT, stASSERT1: (*24 bytes*)
+    PopEDX;
+    OutCode("83FA00751868");
+    OutInt(UTILS.Line);
+    PushInt(UTILS.Unit + 2);
+    IF proc = stASSERT THEN
+      OutCode("6A0268")
+    ELSE
+      OutCode("6A0168")
+    END;
+    OutInt(assrt);
+    OutCode("6A09");
+    jmp(JMP, ASSRT)
+  |sysHALT: CallAPI(ExitProcess)
+  END
+END StProc;
+
+PROCEDURE StFunc*(func: INTEGER);
+BEGIN
+  CASE func OF
+  |stABS:   PopEDX; OutCode("83FA007D02F7DA"); PushEDX
+  |stFABS:  OutCode("DBE3DD0424D9E1DD1C24")
+  |stFLT:   OutCode("6A00DBE3DB442404DD1C24")
+  |stFLOOR: OutCode("DBE3DD0424D97C24FED97C24FC66814C24FE0007D96C24FED9FCD96C24FC5ADB1C24")
+  |stODD:   OutCode("83242401")
+  |stROR:   PopECX; OutCode("58D3C8"); PushEAX
+  |stASR:   PopECX; OutCode("58D3F8"); PushEAX
+  |stLSL:   PopECX; OutCode("58D3E0"); PushEAX
+  |stORD:   PopEDX; OutCode("83FA007405BA01000000"); PushEDX
+  |sysBIT:  PopEDX; OutCode("5933C08A010FA3D072046A00EB026A01")
+  |sysFREELIB:
+    CallAPI(FreeLibrary);
+    PushEAX
+  |sysLOADLIB:
+    CallAPI(LoadLibrary);
+    PushEAX
+  |sysGETPROC:
+    CallAPI(GetProcAddress);
+    PushEAX
+  END
+END StFunc;
+
+PROCEDURE Load*(T: INTEGER);
+VAR lastcmd: ASMLINE; offset: INTEGER;
+
+  PROCEDURE del;
+  BEGIN
+    lastcmd.tcmd := 0;
+    offset := lastcmd.varadr;
+    lastcmd := lastcmd.Prev(ASMLINE);
+    WHILE lastcmd.tcmd # ECMD DO
+      lastcmd.clen := 0;
+      lastcmd.tcmd := 0;
+      lastcmd := lastcmd.Prev(ASMLINE)
+    END;
+    lastcmd.tcmd := 0
+  END del;
+
+BEGIN
+  lastcmd := current(ASMLINE);
+  CASE T OF
+  |TINTEGER, TSET, TPOINTER, TPROC:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      IntByte("FF75", "FFB5", offset)
+    ELSE
+      PopEDX;
+      OutCode("FF32")
+    END
+  |TBOOLEAN:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      OutCode("33D28A");
+      IntByte("55", "95", offset);
+      OutCode("80FA000F95C2");
+      PushEDX
+    ELSE
+      PopEDX;
+      OutCode("33C9803A000F95C1");
+      PushECX
+    END
+  |TCHAR:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      OutCode("33D28A");
+      IntByte("55", "95", offset);
+      PushEDX
+    ELSE
+      PopEDX;
+      OutCode("33C98A0A");
+      PushECX
+    END
+  |TLONGREAL:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      IntByte("FF75", "FFB5", offset + 4);
+      IntByte("FF75", "FFB5", offset)
+    ELSE
+      PopEDX;
+      OutCode("FF7204FF32")
+    END
+  |TREAL:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      OutCode("DBE3D9");
+      IntByte("45", "85", offset);
+      OutCode("83EC08DD1C24")
+    ELSE
+      PopEDX;
+      OutCode("83EC08DBE3D902DD1C24")
+    END
+  |TCARD16:
+    IF lastcmd.tcmd = ECMD THEN
+      del;
+      OutCode("33D2668B");
+      IntByte("55", "95", offset);
+      PushEDX
+    ELSE
+      PopEDX;
+      OutCode("33C9668B0A");
+      PushECX
+    END
+  END
+END Load;
+
+PROCEDURE Save*(T: INTEGER);
+BEGIN
+  CASE T OF
+  |TINTEGER, TSET, TPOINTER, TPROC:
+    PopEDX;
+    OutCode("588910")
+  |TCHAR, TSTRING:
+    PopEDX;
+    OutCode("588810")
+  |TBOOLEAN:
+    PopECX;
+    OutCode("E305B9010000005A880A")
+  |TCARD16:
+    PopEDX;
+    OutCode("58668910")
+  |TLONGREAL:
+    PopEDX;
+    OutCode("59588910894804")
+  |TREAL:
+    OutCode("8B542408DBE3DD0424D91A83C40C")
+  |TRECORD:
+    CallRTL(_saverec);
+    OutCode("83F8007511");
+    OnError(4)
+  |TARRAY:
+    CallRTL(_savearr)
+  END
+END Save;
+
+PROCEDURE Short*;
+BEGIN
+  PopEDX;
+  OutCode("8BCC586A005150");
+  PushEDX;
+  Save(TREAL)
+END Short;
+
+PROCEDURE OpenArray*(A: TIDX; n: INTEGER);
+VAR i: INTEGER;
+BEGIN
+  PopEDX;
+  FOR i := n - 1 TO 0 BY -1 DO
+    PushConst(A[i])
+  END;
+  PushEDX
+END OpenArray;
+
+PROCEDURE OpenIdx*(n: INTEGER);
+BEGIN
+  OutByte(54H);
+  IF n > 1 THEN
+    PushConst(n);
+    CallRTL(_arrayidx)
+  ELSE
+    CallRTL(_arrayidx1)
+  END;
+  OutCode("833C24007511");
+  OnError(5)
+END OpenIdx;
+
+PROCEDURE FixIdx*(len, size: INTEGER);
+BEGIN
+  PopEDX;
+  IntByte("5983FA", "5981FA", len);
+  OutCode("7211");
+  OnError(5);
+  IF size > 1 THEN
+    IntByte("6BD2", "69D2", size)
+  END;
+  OutCode("03D1");
+  PushEDX
+END FixIdx;
+
+PROCEDURE Idx*(n: INTEGER);
+BEGIN
+  PopEDX;
+  IF n > 1 THEN
+    IntByte("6BD2", "69D2", n)
+  END;
+  PopECX;
+  OutCode("03D1");
+  PushEDX
+END Idx;
+
+PROCEDURE DupLoadCheck*;
+BEGIN
+  OutCode("8B14248B0A5183F9007511");
+  OnError(6)
+END DupLoadCheck;
+
+PROCEDURE CheckNIL*;
+BEGIN
+  OutCode("833C24007511");
+  OnError(6)
+END CheckNIL;
+
+PROCEDURE ExtArray*(A: TIDX; n, m: INTEGER);
+VAR i: INTEGER;
+BEGIN
+  FOR i := n - 1 TO 0 BY -1 DO
+    PushConst(A[i])
+  END;
+  OutByte(54H);
+  PushConst(n);
+  PushConst(m);
+  CallRTL(_arrayrot)
+END ExtArray;
+
+PROCEDURE ADR*(dim: INTEGER);
+BEGIN
+  PopEDX;
+  OutCode("83C4");
+  OutByte(dim * 4);
+  PushEDX
+END ADR;
+
+PROCEDURE Len*(dim: INTEGER);
+BEGIN
+  PopEDX;
+  IF dim < 0 THEN
+    PushConst(-dim)
+  ELSIF dim > 1 THEN
+    PopEDX;
+    OutCode("83C4");
+    OutByte((dim - 1) * 4);
+    PushEDX
+  END
+END Len;
+
+PROCEDURE For*(inc: BOOLEAN; VAR LBeg, LEnd: INTEGER);
+BEGIN
+  LEnd := NewLabel();
+  LBeg := NewLabel();
+  Label(LBeg);
+  OutCode("8B14248B4424043910");
+  IF inc THEN
+    jmp(JG, LEnd)
+  ELSE
+    jmp(JL, LEnd)
+  END
+END For;
+
+PROCEDURE NextFor*(step, LBeg, LEnd: INTEGER);
+BEGIN
+  OutCode("8B542404");
+  IF step = 1 THEN
+    OutCode("FF02")
+  ELSIF step = -1 THEN
+    OutCode("FF0A")
+  ELSE
+    IntByte("8302", "8102", step)
+  END;
+  jmp(JMP, LBeg);
+  Label(LEnd);
+  OutCode("83C408")
+END NextFor;
+
+PROCEDURE CaseLabel*(a, b, LBeg: INTEGER);
+BEGIN
+  IntByte("83FA", "81FA", a);
+  IF a = b THEN
+    OutCode("7505")
+  ELSE
+    IntByte("7C0A83FA", "7C0D81FA", b);
+    OutCode("7F05")
+  END;
+  jmp(JMP, LBeg);
+END CaseLabel;
+
+PROCEDURE Drop*;
+BEGIN
+  PopEDX
+END Drop;
+
+PROCEDURE strcmp*(Op, LR: INTEGER);
+CONST n1 = -1;
+BEGIN
+  CASE Op OF
+  |lxEQ: PushConst(0)
+  |lxNE: PushConst(1)
+  |lxLT: PushConst(2)
+  |lxGT: PushConst(3)
+  |lxLE: PushConst(4)
+  |lxGE: PushConst(5)
+  END;
+  CASE LR OF
+  |n1: CallRTL(_lstrcmp)
+  | 0: CallRTL(_strcmp)
+  | 1: CallRTL(_rstrcmp)
+  END;
+  PushEAX
+END strcmp;
+
+PROCEDURE MovReg(cur: UTILS.ITEM; c1, c2: CHAR; pop: INTEGER);
+BEGIN
+  cur(ASMLINE).clen := 2;
+  cur(ASMLINE).tcmd := 0;
+  cur(ASMLINE).cmd := ccount;
+  Code[ccount] := 8BX;
+  INC(ccount);
+  IF cur.Next(ASMLINE).tcmd = pop THEN
+    Code[ccount] := c1
+  ELSE
+    Code[ccount] := c2
+  END;
+  INC(ccount);
+  cur := cur.Next;
+  cur(ASMLINE).clen := 0;
+  cur(ASMLINE).tcmd := 0;
+END MovReg;
+
+PROCEDURE MovConst(cur: UTILS.ITEM; c: CHAR);
+BEGIN
+  cur(ASMLINE).clen := 5;
+  cur(ASMLINE).tcmd := 0;
+  cur(ASMLINE).cmd := ccount;
+  Code[ccount] := c;
+  INC(ccount);
+  sys.PUT(sys.ADR(Code[ccount]), cur(ASMLINE).varadr);
+  INC(ccount, 4);
+  cur := cur.Next;
+  cur(ASMLINE).clen := 0;
+  cur(ASMLINE).tcmd := 0;
+  cur := cur.Next;
+  cur(ASMLINE).clen := 0;
+  cur(ASMLINE).tcmd := 0;
+END MovConst;
+
+PROCEDURE Optimization;
+VAR cur: UTILS.ITEM; flag: BOOLEAN;
+BEGIN
+  cur := asmlist.First;
+  WHILE cur # NIL DO
+    flag := FALSE;
+    CASE cur(ASMLINE).tcmd OF
+    |PUSHEAX:
+      CASE cur.Next(ASMLINE).tcmd OF
+      |POPEAX:
+        flag := TRUE
+      |POPECX, POPEDX:
+        MovReg(cur, 0C8X, 0D0X, POPECX)
+      END
+    |PUSHECX:
+      CASE cur.Next(ASMLINE).tcmd OF
+      |POPECX:
+        flag := TRUE
+      |POPEAX, POPEDX:
+        MovReg(cur, 0C1X, 0D1X, POPEAX)
+      END
+    |PUSHEDX:
+      CASE cur.Next(ASMLINE).tcmd OF
+      |POPEDX:
+        flag := TRUE
+      |POPEAX, POPECX:
+        MovReg(cur, 0C2X, 0CAX, POPEAX)
+      END
+    |PUSHINT:
+      CASE cur.Next.Next(ASMLINE).tcmd OF
+      |POPEAX: MovConst(cur, 0B8X)
+      |POPECX: MovConst(cur, 0B9X)
+      |POPEDX: MovConst(cur, 0BAX)
+      END
+    END;
+    IF flag THEN
+      cur(ASMLINE).clen := 0;
+      cur(ASMLINE).tcmd := 0;
+      cur := cur.Next;
+      cur(ASMLINE).clen := 0;
+      cur(ASMLINE).tcmd := 0;
+      flag := FALSE
+    END;
+    cur := cur.Next
+  END;
+END Optimization;
+
+PROCEDURE FixLabels(FName: ARRAY OF CHAR; stk, gsize: INTEGER; con: BOOLEAN);
+VAR size, asize, i, rdatasize, RCount, n: INTEGER; cur: UTILS.ITEM; R: RELOC;
+BEGIN
+  IF dll THEN
+    LoadAdr := 10000000H;
+    PackExport(ExecName)
+  ELSE
+    LoadAdr := 400000H
+  END;
+  rdatasize := 0DAH + etable.size;
+  size := 1000H + LoadAdr;
+  Optimization;
+  cur := asmlist.First;
+  WHILE cur # NIL DO
+    cur(ASMLINE).adr := size;
+    IF cur(ASMLINE).tcmd = LCMD THEN
+      sys.PUT(cur(ASMLINE).varadr, size)
+    END;
+    size := size + cur(ASMLINE).clen;
+    cur := cur.Next
+  END;
+  asize := Align(size, 1000H);
+  FOR i := 0 TO Lcount DO
+    IF Labels[i] < 0 THEN
+      Labels[i] := -Labels[i] + asize + Align(rdatasize, 1000H) - 1
+    END
+  END;
+  IF dll THEN
+    asize := asize - LoadAdr + 0DAH;
+    FOR i := 0 TO etable.namecount - 1 DO
+      etable.arradr[i] := Labels[etable.arradr[i]] - LoadAdr;
+      etable.arrnameptr[i] := etable.arrnameptr[i] + asize
+    END;
+    etable.arradroffset := etable.arradroffset + asize;
+    etable.arrnameptroffset := etable.arrnameptroffset + asize;
+    etable.arrnumoffset := etable.arrnumoffset + asize;
+    etable.dllnameoffset := etable.dllnameoffset + asize;
+    asize := asize + LoadAdr - 0DAH
+  END;
+  Labels[LoadLibrary] := asize + 08H;
+  Labels[FreeLibrary] := asize + 00H;
+  Labels[GetProcAddress] := asize + 0CH;
+  Labels[ExitProcess] := asize + 04H;
+  cur := asmlist.First;
+  R.Page := 0;
+  R.Size := 0;
+  RCount := 0;
+  FOR i := 0 TO LEN(RtlProc) - 1 DO
+    RtlProc[i] := Labels[RtlProc[i]]
+  END;
+  WHILE cur # NIL DO
+    CASE cur(ASMLINE).tcmd OF
+    |JCMD:
+      sys.GET(cur(ASMLINE).varadr, i);
+      sys.PUT(cur(ASMLINE).codeadr, i - cur.Next(ASMLINE).adr)
+    |GCMD:
+      sys.GET(cur(ASMLINE).codeadr, i);
+      sys.PUT(cur(ASMLINE).codeadr, i + asize + Align(rdatasize, 1000H) + dcount - 1)
+    |OCMD:
+      sys.GET(cur(ASMLINE).varadr, i);
+      sys.PUT(cur(ASMLINE).codeadr, i)
+    END;
+    IF dll & (cur(ASMLINE).tcmd IN {GCMD, OCMD}) THEN
+      n := cur(ASMLINE).adr - LoadAdr + cur(ASMLINE).clen - 4;
+      IF n DIV 1000H = R.Page DIV 1000H THEN
+        R.reloc[RCount] := IntToCard16(n MOD 1000H + 3000H);
+        INC(RCount);
+        INC(R.Size, 2)
+      ELSE
+        IF R.Size # 0 THEN
+          PutReloc(R)
+        END;
+        R.Page := (n DIV 1000H) * 1000H;
+        R.Size := 10;
+        R.reloc[0] := IntToCard16(n MOD 1000H + 3000H);
+        RCount := 1
+      END
+    END;
+    cur := cur.Next
+  END;
+  IF R.Size # 0 THEN
+    PutReloc(R)
+  END;
+  WriteFile(FName, ORD(con) + 2, stk, size - 1000H - LoadAdr, dcount - 1, rdatasize, gsize)
+END FixLabels;
+
+PROCEDURE Epilog*(gsize: INTEGER; FName: ARRAY OF CHAR; stk: INTEGER; con: BOOLEAN);
+VAR i: INTEGER;
+BEGIN
+  gsize := Align(gsize, 4) + 4;
+  COPY(FName, OutFile);
+  Labels[RTABLE] := -dcount;
+  dataint(recarray[0]);
+  FOR i := 1 TO reccount DO
+    dataint(recarray[i])
+  END;
+  current := start;
+  GlobalAdr(0);
+  PushConst(gsize DIV 4);
+  OutCode("8BC7595F5033C0FCF3AB5F");
+  PushInt(RTABLE);
+  PushInt(SELFNAME);
+  CallRTL(_init);
+  current := asmlist.Last;
+  IF dll THEN
+    OutCode("B801000000C9C20C00")
+  END;
+  OutCode("EB05");
+  Label(ASSRT);
+  CallRTL(_assrt);
+  OutCode("EB0B");
+  Label(HALT);
+  PopEDX;
+  OutCode("6A006A00");
+  PushEDX;
+  CallRTL(_assrt);
+  OutCode("6A00");
+  CallAPI(ExitProcess);
+  FixLabels(FName, stk, gsize, con)
+END Epilog;
+
+END X86.

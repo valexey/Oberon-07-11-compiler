@@ -1,0 +1,1557 @@
+MODULE DECL;
+
+IMPORT SCAN, UTILS, X86, SYSTEM;
+
+CONST
+
+  lxEOF = 0; lxINT = 1; lxREAL = 2; lxSTRING = 3; lxIDENT = 4; lxHEX = 5; lxCHX = 6; lxLONGREAL = 7;
+  lxARRAY = 101; lxBEGIN = 102; lxBY = 103; lxCASE = 104; lxCONST = 105; lxDIV = 106;
+  lxDO = 107; lxELSE = 108; lxELSIF = 109; lxEND = 110; lxFALSE = 111; lxFOR = 112;
+  lxIF = 113; lxIMPORT = 114; lxIN = 115; lxIS = 116; lxMOD = 117; lxMODULE = 118;
+  lxNIL = 119; lxOF = 120; lxOR = 121; lxPOINTER = 122; lxPROCEDURE = 123; lxRECORD = 124;
+  lxREPEAT = 125; lxRETURN = 126; lxTHEN = 127; lxTO = 128; lxTRUE = 129; lxTYPE = 130;
+  lxUNTIL = 131; lxVAR = 132; lxWHILE = 133;
+  lxPlus = 301; lxMinus = 302; lxMult = 303; lxSlash = 304; lxNot = 305; lxAnd = 306;
+  lxComma = 307; lxSemi = 308; lxStick = 309; lxLRound = 310; lxLSquare = 311;
+  lxLCurly = 312; lxCaret = 313; lxEQ = 314; lxNE = 315; lxRRound = 316; lxRSquare = 317;
+  lxRCurly = 318; lxDot = 319; lxDbl = 320; lxGT = 321; lxGE = 322; lxLT = 323;
+  lxLE = 324; lxAssign = 325; lxColon = 326;
+
+  lxERR0 = 200; lxERR1 = 201; lxERR2 = 202; lxERR3 = 203; lxERR4 = 204; lxERR5 = 205; lxERR6 = 206;
+  lxERR7 = 207; lxERR8 = 208; lxERR9 = 209; lxERR10 = 210; lxERR11 = 211; lxERR20 = 220;
+
+  IDMOD = 1; IDCONST = 2; IDTYPE = 3; IDVAR = 4; IDPROC = 5; IDSTPROC = 6; IDGUARD = 7; IDPARAM = 8; IDSYSPROC = 9;
+
+  stABS = 1; stODD = 2; stLEN = 3; stLSL = 4; stASR = 5; stROR = 6; stFLOOR = 7; stFLT = 8;
+  stORD = 9; stCHR = 10; stLONG = 11; stSHORT = 12; stINC = 13; stDEC = 14; stINCL = 15;
+  stEXCL = 16; stCOPY = 17; stNEW = 18; stASSERT = 19; stPACK = 20; stUNPK = 21; stDISPOSE = 22;
+
+  sysADR = 101; sysSIZE = 102; sysBIT = 103; sysGET = 104; sysPUT = 105; sysCODE = 106;
+  sysLOADLIB = 107; sysFREELIB = 108; sysGETPROC = 109; sysHALT = 110;
+
+  TINTEGER = 1; TREAL = 2; TLONGREAL = 3; TCHAR = 4; TSET = 5; TBOOLEAN = 6; TVOID = 7; TNIL = 8;
+  TCARD16 = 9; TSTRING = 10; TARRAY = 11; TRECORD = 12; TPOINTER = 13; TPROC = 14;
+
+  paramvar* = 1; param* = 2;
+
+  eVAR = 1; eCONST = 2; eEXP = 3; ePROC = 4; eSTPROC = 5; eSYSPROC = 6;
+
+  IOVER* = lxERR5 - lxERR0;
+  FOVER* = lxERR7 - lxERR0;
+  UNDER* = lxERR9 - lxERR0;
+
+TYPE
+
+  pTYPE* = POINTER TO rTYPE;
+  IDENT* = POINTER TO rIDENT;
+
+  EXPRESSION* = RECORD
+    eType*: INTEGER;
+    T*: DECL.pTYPE;
+    Value*: LONGREAL;
+    Read*: BOOLEAN;
+    id*: DECL.IDENT;
+    vparam*: BOOLEAN;
+    deref*: BOOLEAN
+  END;
+
+  opPROC = PROCEDURE;
+  expPROC = PROCEDURE (VAR e: EXPRESSION);
+  assPROC = PROCEDURE (e: DECL.EXPRESSION; T: DECL.pTYPE; param: BOOLEAN): BOOLEAN;
+  FIELD* = POINTER TO rFIELD;
+  UNIT = POINTER TO rUNIT;
+  STRITEM = POINTER TO rSTRITEM;
+  STRCONST* = POINTER TO rSTRCONST;
+  PTRBASE = POINTER TO rPTRBASE;
+
+  rSTRITEM = RECORD (UTILS.rITEM)
+    Str: UTILS.STRING
+  END;
+
+  rFIELD* = RECORD (UTILS.rITEM)
+    Name: SCAN.NODE;
+    T*: pTYPE;
+    Offset*: INTEGER;
+    Export*: BOOLEAN;
+    ByRef*: BOOLEAN;
+    Unit*: UNIT
+  END;
+
+  rUNIT* = RECORD (UTILS.rITEM)
+    Name: SCAN.NODE;
+    File: UTILS.FILENAME;
+    Idents: UTILS.LIST;
+    IdentBegin: UTILS.ITEM;
+    Closed: BOOLEAN;
+    scanner: SCAN.SCANNER;
+    FHandle: INTEGER;
+    Import: UTILS.LIST;
+    Level*: INTEGER;
+    typedecl: BOOLEAN;
+    ExportType: BOOLEAN;
+    Std: BOOLEAN
+  END;
+
+  rIDENT* = RECORD (UTILS.rITEM)
+    Name: SCAN.NODE;
+    line*, col*: INTEGER;
+    Number*: INTEGER;
+    iType*: INTEGER;
+    T*: pTYPE;
+    Unit*: UNIT;
+    Value*: LONGREAL;
+    Export: BOOLEAN;
+    StProc*: INTEGER;
+    VarSize: INTEGER;
+    ParamSize*: INTEGER;
+    LocalSize: INTEGER;
+    Offset*: INTEGER;
+    VarKind*: INTEGER;
+    current: BOOLEAN;
+    Level*: INTEGER;
+    Parent*: IDENT;
+    ParamCount*: INTEGER
+  END;
+
+  rTYPE* = RECORD (UTILS.rITEM)
+    tType*: INTEGER;
+    Size*: INTEGER;
+    Len*: INTEGER;
+    Base*: pTYPE;
+    Fields*: UTILS.LIST;
+    Number*: INTEGER;
+    Align: INTEGER
+  END;
+
+  rPTRBASE = RECORD (UTILS.rITEM)
+    Name: SCAN.NODE;
+    line, col: INTEGER;
+    Ptr: pTYPE
+  END;
+
+  rSTRCONST* = RECORD (UTILS.rITEM)
+    Str*: ARRAY SCAN.STRLENGTH OF CHAR;
+    Len*, Number*: INTEGER
+  END;
+
+  stTYPES* = ARRAY 11 OF pTYPE;
+
+VAR
+
+  sttypes: stTYPES; unit*, sys: UNIT; curBlock*: IDENT; Path, Main, Std: UTILS.FILENAME;
+  NamePtrBase: SCAN.NODE; ProgSize*, RecCount, UnitNumber*: INTEGER;
+  PtrBases, Strings, types, prog: UTILS.LIST; OpSeq: opPROC; Expr: expPROC;
+  AssComp: assPROC; main, sizefunc, rtl: BOOLEAN;
+  pParseType: PROCEDURE (VAR line, col: INTEGER): pTYPE;
+  pReadModule: PROCEDURE (Path, Name: UTILS.FILENAME): BOOLEAN;
+
+PROCEDURE SetSizeFunc*;
+BEGIN
+  sizefunc := TRUE
+END SetSizeFunc;
+
+PROCEDURE MemErr*(err: BOOLEAN);
+BEGIN
+  IF err THEN
+    SCAN.MemErr(err)
+  END
+END MemErr;
+
+PROCEDURE GetString*(adr: LONGREAL): STRCONST;
+VAR str: STRCONST;
+BEGIN
+  SYSTEM.PUT(SYSTEM.ADR(str), FLOOR(adr))
+  RETURN str
+END GetString;
+
+PROCEDURE AddString*(str: ARRAY OF CHAR): STRCONST;
+VAR nov: STRCONST;
+BEGIN
+  NEW(nov);
+  MemErr(nov = NIL);
+  COPY(str, nov.Str);
+  nov.Len := SCAN.count - 1;
+  nov.Number := X86.NewLabel();
+  Strings.Push(Strings, nov);
+  X86.String(nov.Number, nov.Len, nov.Str)
+  RETURN nov
+END AddString;
+
+PROCEDURE AddMono*(c: CHAR): STRCONST;
+VAR nov: STRCONST;
+BEGIN
+  NEW(nov);
+  MemErr(nov = NIL);
+  nov.Str[0] := c;
+  nov.Str[1] := 0X;
+  nov.Len := 1;
+  nov.Number := X86.NewLabel();
+  Strings.Push(Strings, nov);
+  X86.String(nov.Number, nov.Len, nov.Str)
+  RETURN nov
+END AddMono;
+
+PROCEDURE Coord(VAR line, col: INTEGER);
+BEGIN
+  line := SCAN.line;
+  col := SCAN.col
+END Coord;
+
+PROCEDURE GetModule(Name: SCAN.NODE): UNIT;
+VAR cur: UTILS.ITEM; res: UNIT;
+BEGIN
+  res := NIL;
+  cur := prog.First;
+  WHILE (cur # NIL) & UTILS.streq(cur(UNIT).Name.Name, Name.Name) DO
+    res := cur(UNIT);
+    cur := NIL
+  ELSIF cur # NIL DO
+    cur := cur.Next
+  END
+  RETURN res
+END GetModule;
+
+PROCEDURE Error(line, col, code: INTEGER);
+VAR s: UTILS.STRING;
+BEGIN
+  UTILS.OutString("ошибка:  "); UTILS.Int(code); UTILS.Ln;
+  UTILS.OutString("файл: "); UTILS.Ln;
+  UTILS.OutString(unit.File); UTILS.Ln;
+  UTILS.OutString("строка:  "); UTILS.Int(line); UTILS.Ln;
+  UTILS.OutString("столбец: "); UTILS.Int(col); UTILS.Ln;
+  CASE code OF
+  |  1: s := "ожидалось 'H' или 'X'"
+  |  2: s := "ожидалась цифра"
+  |  3: s := "строка не содержит закрывающей кавычки"
+  |  4: s := "недопустимый символ"
+  |  5: s := "целочисленное переполнение"
+  |  6: s := "слишком большое значение символьной константы"
+  |  7: s := "вещественное переполнение"
+  |  8: s := "переполнение порядка вещественного числа"
+  |  9: s := "вещественное антипереполнение"
+  | 10: s := "слишком длинный идентификатор"
+  | 11: s := "слишком длинная строковая константа"
+  | 21: s := "ожидалось 'MODULE'"
+  | 22: s := "ожидался идентификатор"
+  | 23: s := "ожидалась ';'"
+  | 24: s := "ожидалось 'END'"
+  | 25: s := "ожидалась '.'"
+  | 26: s := "идентификатор не совпадает с именем модуля"
+  | 27: s := "неожиданный конец файла"
+  | 28: s := "ожидалась ',', ';' или ':='"
+  | 29: s := "ожидалась ',' или ';'"
+  | 30: s := "идентификатор переопределен"
+  | 31: s := "циклический импорт"
+  | 32: s := "модуль не найден или ошибка доступа"
+  | 33: s := "имя модуля не совпадает с именем файла модуля"
+  | 34: s := "неправильный формат строки машинных кодов"
+  | 35: s := "ожидалось '='"
+  | 36: s := "синтаксическая ошибка в выражении"
+  | 37: s := "операция не применима"
+  | 38: s := "ожидалась ')'"
+  | 39: s := "ожидалoсь 'ARRAY', 'RECORD', 'POINTER' или 'PROCEDURE'"
+  | 40: s := "ожидалoсь 'TO'"
+  | 41: s := "ожидалoсь 'OF'"
+  | 42: s := "неопределенный идентификатор"
+  | 43: s := "требуется переменная или строковая константа"
+  | 46: s := "деление на нуль"
+  | 48: s := "целочисленное деление на нуль"
+  | 49: s := "значение левого операнда вне диапазона 0..31"
+  | 51: s := "ожидалась '}'"
+  | 52: s := "требуется выражение типа INTEGER"
+  | 53: s := "значение выражения вне диапазона 0..31"
+  | 54: s := "левая граница диапазона больше правой"
+  | 55: s := "требуется константа типа CHAR"
+  | 56: s := "ожидалась '('"
+  | 57: s := "требуется выражение числового типа"
+  | 61: s := "ожидалась ','"
+  | 62: s := "требуется константное выражение"
+  | 63: s := "требуется переменная"
+  | 66: s := "требуется выражение типа REAL или LONGREAL"
+  | 68: s := "требуется выражение типа CHAR, SET или BOOLEAN"
+  | 70: s := "требуется выражение типа LONGREAL"
+  | 71: s := "требуется выражение типа REAL"
+  | 73: s := "процедура не возвращающая результат недопустима в выражениях"
+  | 74: s := "значение выражения вне целочисленного диапазона"
+  | 76: s := "значение выражения вне диапазона 0..255"
+  | 77: s := "ожидался идентификатор типа"
+  | 78: s := "длина типа-массива должна быть больше нуля"
+  | 79: s := "ожидалось 'OF' или ','"
+  | 80: s := "ожидался идентификатор типа-записи"
+  | 81: s := "базовый тип типа-указателя должен быть записью"
+  | 82: s := "тип результата процедуры не может быть записью или массивом"
+  | 83: s := "размер типа-массива слишком велик"
+  | 84: s := "ожидался идентификатор или 'VAR'"
+  | 85: s := "ожидалась ',' или ':'"
+  | 86: s := "ожидалось 'END' или ';'"
+  | 87: s := "идентификатор не совпадает с именем процедуры"
+  | 88: s := "размер типа-записи слишком велик"
+  | 89: s := "экспорт локального идентификатора недопустим"
+  | 90: s := "экспорт переменных типа ARRAY или RECORD недопустим"
+  | 91: s := "экспорт поля записи недопустим вне секции объявления типов"
+  | 92: s := "экспорт поля записи недопустим, так как не экспортируется тип записи"
+  | 93: s := "размер данных слишком велик"
+  | 94: s := "строка длины, отличной от 1 недопустима"
+  | 96: s := "рекурсивное определение идентификатора"
+  | 98: s := "ожидалось 'THEN'"
+  | 99: s := "поле записи не найдено"
+  |100: s := "метка дублирована"
+  |101: s := "идентификатор типа недопустим в выражениях"
+  |102: s := "требуется массив"
+  |104: s := "требуется указатель"
+  |105: s := "требуется запись"
+  |106: s := "требуется идентификатор типа-записи"
+  |107: s := "требуется идентификатор типа-указателя"
+  |108: s := "недопустимая охрана типа"
+  |109: s := "ожидалась ']'"
+  |110: s := "размерность открытого массива слишком велика"
+  |114: s := "несовместимый параметр"
+  |115: s := "переменная доступна только для чтения"
+  |116: s := "нельзя использовать локальную процедуру"
+  |117: s := "требуется выражение типа BOOLEAN"
+  |118: s := "ожидалось 'DO'"
+  |119: s := "ожидалось 'UNTIL'"
+  |120: s := "ожидалось ':='"
+  |122: s := "значение выражения не должно быть равным нулю"
+  |123: s := "'RETURN' недопустим в процедуре, не возвращающей результат"
+  |124: s := "ожидалось 'RETURN'"
+  |125: s := "тип выражения не соответствует типу результата процедуры"
+  |126: s := "требуется идентификатор переменной"
+  |127: s := "счетчик цикла FOR не должен быть параметром"
+  |128: s := "тип переменной должен быть INTEGER"
+  |129: s := "переменная должна быть локальной"
+  |130: s := "нельзя использовать константу"
+  |131: s := "несовместимость по присваиванию"
+  |132: s := "вызов процедуры-функции допускается только в составе выражения"
+  |138: s := "тип переменной должен быть SET"
+  |141: s := "требуется строка или символьный массив"
+  |143: s := "требуется символьный массив"
+  |145: s := "тип переменной должен быть POINTER"
+  |149: s := "тип переменной должен быть REAL или LONGREAL"
+  |150: s := "требуется строковая константа"
+  |153: s := "тип выражения должен быть элементарным"
+  |154: s := "тип переменной должен быть элементарным"
+  |155: s := "ожидалось '(' или ':='"
+  |156: s := "требуется выражение типа INTEGER или CHAR"
+  |157: s := "ожидалось ':'"
+  |158: s := "левая граница диапазона больше правой"
+  |159: s := "нарушение границ массива"
+  |160: s := "ожидался идентификатор константы"
+  |161: s := "требуется константа типа INTEGER"
+  END;
+  UTILS.OutString(s);
+  UTILS.Ln
+END Error;
+
+PROCEDURE Assert*(cond: BOOLEAN; line, col, code: INTEGER);
+BEGIN
+  IF ~cond THEN
+    Error(line, col, code);
+    SYSTEM.HALT(1)
+  END
+END Assert;
+
+PROCEDURE Assert2(cond: BOOLEAN; code: INTEGER);
+BEGIN
+  Assert(cond, SCAN.line, SCAN.col, code)
+END Assert2;
+
+PROCEDURE Next*;
+BEGIN
+  SCAN.GetLex;
+  IF (SCAN.tLex > lxERR0) & (SCAN.tLex < lxERR20) THEN
+    Assert(FALSE, SCAN.line, SCAN.col + SCAN.count, SCAN.tLex - lxERR0)
+  END;
+  Assert2(SCAN.tLex # lxEOF, 27)
+END Next;
+
+PROCEDURE Check*(key: INTEGER);
+VAR code: INTEGER;
+BEGIN
+  IF SCAN.tLex # key THEN
+    CASE key OF
+    |lxMODULE:  code := 21
+    |lxIDENT:   code := 22
+    |lxSemi:    code := 23
+    |lxEND:     code := 24
+    |lxDot:     code := 25
+    |lxEQ:      code := 35
+    |lxRRound:  code := 38
+    |lxTO:      code := 40
+    |lxOF:      code := 41
+    |lxRCurly:  code := 51
+    |lxLRound:  code := 56
+    |lxComma:   code := 61
+    |lxTHEN:    code := 98
+    |lxRSquare: code := 109
+    |lxDO:      code := 118
+    |lxUNTIL:   code := 119
+    |lxAssign:  code := 120
+    |lxRETURN:  code := 124
+    |lxColon:   code := 157
+    END;
+    Assert2(FALSE, code)
+  END
+END Check;
+
+PROCEDURE CheckIdent(Name: SCAN.NODE): BOOLEAN;
+VAR cur: UTILS.ITEM;
+BEGIN
+  cur := unit.Idents.Last;
+  WHILE (cur(IDENT).iType # IDGUARD) & (cur(IDENT).Name # Name) DO
+    cur := cur.Prev
+  END
+  RETURN cur(IDENT).iType = IDGUARD
+END CheckIdent;
+
+PROCEDURE Guard;
+VAR ident: IDENT;
+BEGIN
+  NEW(ident);
+  MemErr(ident = NIL);
+  ident.Name := NIL;
+  ident.iType := IDGUARD;
+  ident.T := sttypes[TVOID];
+  ident.current := FALSE;
+  unit.Idents.Push(unit.Idents, ident);
+  INC(unit.Level)
+END Guard;
+
+PROCEDURE PushIdent(Name: SCAN.NODE; line, col, iType: INTEGER; T: pTYPE; u: UNIT; Export: BOOLEAN; StProc: INTEGER; current: BOOLEAN);
+VAR ident: IDENT; i: INTEGER;
+BEGIN
+  Assert(CheckIdent(Name), line, col, 30);
+  NEW(ident);
+  MemErr(ident = NIL);
+  ident.Name := Name;
+  ident.line := line;
+  ident.col := col;
+  ident.Number := 0;
+  IF iType IN {IDPROC, IDMOD} THEN
+    ident.Number := X86.NewLabel();
+    i := X86.NewLabel();
+    IF iType = IDMOD THEN
+      i := X86.NewLabel()
+    END
+  END;
+  ident.iType := iType;
+  ident.T := T;
+  ident.Unit := u;
+  ident.Value := 0.0D0;
+  ident.Export := Export;
+  ident.StProc := StProc;
+  ident.VarSize := 0;
+  ident.ParamSize := 0;
+  ident.LocalSize := 0;
+  ident.Offset := 0;
+  ident.VarKind := 0;
+  ident.current := current;
+  ident.Level := unit.Level;
+  ident.Parent := NIL;
+  ident.ParamCount := 0;
+  unit.Idents.Push(unit.Idents, ident)
+END PushIdent;
+
+PROCEDURE StTypes;
+VAR type: pTYPE; i: INTEGER;
+BEGIN
+  sttypes[0] := NIL;
+  FOR i := TINTEGER TO TSTRING DO
+    NEW(type);
+    MemErr(type = NIL);
+    type.tType := i;
+    type.Base := NIL;
+    type.Len := 0;
+    type.Fields := NIL;
+    type.Number := 0;
+    types.Push(types, type);
+    sttypes[i] := type
+  END;
+  sttypes[TINTEGER].Size := 4;
+  sttypes[TREAL].Size := 4;
+  sttypes[TLONGREAL].Size := 8;
+  sttypes[TBOOLEAN].Size := 1;
+  sttypes[TCHAR].Size := 1;
+  sttypes[TSET].Size := 4;
+  sttypes[TVOID].Size := 0;
+  sttypes[TSTRING].Size := 0;
+  sttypes[TNIL].Size := 4;
+  sttypes[TCARD16].Size := 2;
+  FOR i := TINTEGER TO TSTRING DO
+    sttypes[i].Align := sttypes[i].Size
+  END
+END StTypes;
+
+PROCEDURE PushStProc(Name: SCAN.LEXSTR; StProc: INTEGER);
+BEGIN
+  PushIdent(SCAN.AddNode(Name), 0, 0, IDSTPROC, sttypes[TVOID], NIL, FALSE, StProc, FALSE)
+END PushStProc;
+
+PROCEDURE PushStType(Name: SCAN.LEXSTR; T: INTEGER);
+BEGIN
+  PushIdent(SCAN.AddNode(Name), 0, 0, IDTYPE, sttypes[T], NIL, FALSE, 0, FALSE)
+END PushStType;
+
+PROCEDURE PushSysProc(Name: SCAN.LEXSTR; StProc: INTEGER);
+BEGIN
+  PushIdent(SCAN.AddNode(Name), 0, 0, IDSYSPROC, sttypes[TVOID], NIL, TRUE, StProc, FALSE)
+END PushSysProc;
+
+PROCEDURE PushSysType(Name: SCAN.LEXSTR; T: INTEGER);
+BEGIN
+  PushIdent(SCAN.AddNode(Name), 0, 0, IDTYPE, sttypes[T], NIL, TRUE, 0, FALSE)
+END PushSysType;
+
+PROCEDURE StIdent;
+BEGIN
+  Guard;
+  PushStProc("ABS",      stABS);
+  PushStProc("ASR",      stASR);
+  PushStProc("ASSERT",   stASSERT);
+  PushStType("BOOLEAN",  TBOOLEAN);
+  PushStType("CHAR",     TCHAR);
+  PushStProc("CHR",      stCHR);
+  PushStProc("COPY",     stCOPY);
+  PushStProc("DEC",      stDEC);
+  PushStProc("DISPOSE",  stDISPOSE);
+  PushStProc("EXCL",     stEXCL);
+  PushStProc("FLOOR",    stFLOOR);
+  PushStProc("FLT",      stFLT);
+  PushStProc("INC",      stINC);
+  PushStProc("INCL",     stINCL);
+  PushStType("INTEGER",  TINTEGER);
+  PushStProc("LEN",      stLEN);
+  PushStProc("LSL",      stLSL);
+  PushStProc("LONG",     stLONG);
+  PushStType("LONGREAL", TLONGREAL);
+  PushStProc("NEW",      stNEW);
+  PushStProc("ODD",      stODD);
+  PushStProc("ORD",      stORD);
+  PushStProc("PACK",     stPACK);
+  PushStType("REAL",     TREAL);
+  PushStProc("ROR",      stROR);
+  PushStType("SET",      TSET);
+  PushStProc("SHORT",    stSHORT);
+  PushStProc("UNPK",     stUNPK);
+  Guard
+END StIdent;
+
+PROCEDURE GetQIdent*(Unit: UNIT; Name: SCAN.NODE): IDENT;
+VAR cur: UTILS.ITEM; line, col: INTEGER; res: IDENT;
+BEGIN
+  res := NIL;
+  Coord(line, col);
+  cur := Unit.IdentBegin.Next;
+  WHILE (cur # NIL) & (cur(IDENT).iType # IDGUARD) DO
+    IF cur(IDENT).Name = Name THEN
+      Assert(~cur(IDENT).current, line, col, 96);
+      IF (Unit # unit) & ~cur(IDENT).Export THEN
+        res := NIL
+      ELSE
+        res := cur(IDENT)
+      END;
+      cur := NIL
+    ELSE
+      cur := cur.Next
+    END
+  END
+  RETURN res
+END GetQIdent;
+
+PROCEDURE GetIdent*(Name: SCAN.NODE): IDENT;
+VAR cur: UTILS.ITEM; line, col: INTEGER; res: IDENT;
+BEGIN
+  res := NIL;
+  Coord(line, col);
+  cur := unit.Idents.Last;
+  WHILE (cur # NIL) & (cur(IDENT).Name = Name) DO
+    Assert(~cur(IDENT).current, line, col, 96);
+    res := cur(IDENT);
+    cur := NIL
+  ELSIF cur # NIL DO
+    cur := cur.Prev
+  END
+  RETURN res
+END GetIdent;
+
+PROCEDURE Relation*(Op: INTEGER): BOOLEAN;
+VAR Res: BOOLEAN;
+BEGIN
+  Res := FALSE;
+  CASE Op OF
+  |lxEQ, lxNE, lxLT, lxGT,
+   lxLE, lxGE, lxIN, lxIS:
+    Res := TRUE
+  END
+  RETURN Res
+END Relation;
+
+PROCEDURE Arith(a, b: LONGREAL; T: pTYPE; Op, line, col: INTEGER): LONGREAL;
+CONST max = SCAN.maxDBL;
+VAR res: LONGREAL;
+BEGIN
+  CASE Op OF
+  |lxPlus: res := a + b
+  |lxMinus: res := a - b
+  |lxMult: res := a * b
+  |lxSlash:
+    Assert(b # 0.0D0, line, col, 46);
+    res := a / b
+  |lxDIV:
+    Assert(~((a = LONG(FLT(SCAN.minINT))) & (b = -1.0D0)), line, col, IOVER);
+    res := LONG(FLT(FLOOR(a) DIV FLOOR(b)))
+  |lxMOD:
+    res := LONG(FLT(FLOOR(a) MOD FLOOR(b)))
+  END;
+  Assert(~UTILS.IsInf(res), line, col, FOVER);
+  CASE T.tType OF
+  |TINTEGER:  Assert((res <= LONG(FLT(SCAN.maxINT))) & (res >= LONG(FLT(SCAN.minINT))), line, col, IOVER)
+  |TREAL:     Assert((res <= LONG(SCAN.maxREAL)) & (res >= -LONG(SCAN.maxREAL)), line, col, FOVER)
+  |TLONGREAL: Assert((res <= max) & (res >= -max), line, col, FOVER)
+  END;
+  IF (res = 0.0D0) & (T.tType IN {TREAL, TLONGREAL}) OR (ABS(res) < LONG(SCAN.minREAL)) & (T.tType = TREAL) THEN
+    CASE Op OF
+    |lxPlus:  Assert(a = -b, line, col, UNDER)
+    |lxMinus: Assert(a = b, line, col, UNDER)
+    |lxMult:  Assert((a = 0.0D0) OR (b = 0.0D0), line, col, UNDER)
+    |lxSlash: Assert(FALSE, line, col, UNDER)
+    END
+  END
+  RETURN res
+END Arith;
+
+PROCEDURE strcmp(a, b: LONGREAL; Op: INTEGER): LONGREAL;
+VAR sa, sb: STRCONST; Res: LONGREAL;
+BEGIN
+  sa := GetString(a);
+  sb := GetString(b);
+  CASE Op OF
+  |lxEQ, lxNE: Res := LONG(FLT(ORD(sa.Str = sb.Str)))
+  |lxLT, lxGT: Res := LONG(FLT(ORD(sa.Str < sb.Str)))
+  |lxLE, lxGE: Res := LONG(FLT(ORD(sa.Str <= sb.Str)))
+  END
+  RETURN Res
+END strcmp;
+
+PROCEDURE Calc*(a, b: LONGREAL; Ta, Tb: pTYPE; Op, line, col: INTEGER; VAR Res: LONGREAL; VAR TRes: pTYPE);
+VAR c: LONGREAL;
+BEGIN
+  IF Op # lxIN THEN
+    Assert(Ta = Tb, line, col, 37)
+  END;
+  CASE Op OF
+  |lxPlus, lxMinus, lxMult, lxSlash:
+    Assert(~((Op = lxSlash) & (Ta.tType = TINTEGER)), line, col, 37);
+    IF Ta.tType IN {TINTEGER, TREAL, TLONGREAL} THEN
+      Res := Arith(a, b, Ta, Op, line, col)
+    ELSIF Ta.tType = TSET THEN
+      CASE Op OF
+      |lxPlus:  Res := LONG(FLT(ORD(UTILS.FloatToSet(a) + UTILS.FloatToSet(b))))
+      |lxMinus: Res := LONG(FLT(ORD(UTILS.FloatToSet(a) - UTILS.FloatToSet(b))))
+      |lxMult:  Res := LONG(FLT(ORD(UTILS.FloatToSet(a) * UTILS.FloatToSet(b))))
+      |lxSlash: Res := LONG(FLT(ORD(UTILS.FloatToSet(a) / UTILS.FloatToSet(b))))
+      END
+    ELSE
+      Assert(FALSE, line, col, 37)
+    END;
+    TRes := Ta
+  |lxDIV, lxMOD:
+    Assert(Ta.tType = TINTEGER, line, col, 37);
+    Assert(b # 0.0D0, line, col, 48);
+    TRes := Ta;
+    Res := Arith(a, b, Ta, Op, line, col)
+  |lxAnd:
+    Assert(Ta.tType = TBOOLEAN, line, col, 37);
+    Res := LONG(FLT(ORD((a # 0.0D0) & (b # 0.0D0))))
+  |lxOR:
+    Assert(Ta.tType = TBOOLEAN, line, col, 37);
+    Res := LONG(FLT(ORD((a # 0.0D0) OR (b # 0.0D0))))
+  |lxEQ, lxNE:
+    IF Ta.tType = TSTRING THEN
+      Res := strcmp(a, b, Op)
+    ELSE
+      Res := LONG(FLT(ORD(a = b)))
+    END;
+    IF Op = lxNE THEN
+      Res := LONG(FLT(ORD(Res = 0.0D0)))
+    END
+  |lxLT, lxGT:
+    IF Op = lxGT THEN
+      c := a;
+      a := b;
+      b := c
+    END;
+    Assert(Ta.tType IN {TSTRING, TINTEGER, TREAL, TLONGREAL}, line, col, 37);
+    IF Ta.tType = TSTRING THEN
+      Res := strcmp(a, b, Op)
+    ELSE
+      Res := LONG(FLT(ORD(a < b)))
+    END
+  |lxLE, lxGE:
+    IF Op = lxGE THEN
+      c := a;
+      a := b;
+      b := c
+    END;
+    Assert(Ta.tType IN {TSTRING, TINTEGER, TREAL, TLONGREAL, TSET}, line, col, 37);
+    IF Ta.tType = TSTRING THEN
+      Res := strcmp(a, b, Op)
+    ELSIF Ta.tType = TSET THEN
+      Res := LONG(FLT(ORD(UTILS.FloatToSet(a) <= UTILS.FloatToSet(b))))
+    ELSE
+      Res := LONG(FLT(ORD(a <= b)))
+    END
+  |lxIN:
+    Assert((Ta.tType = TINTEGER) & (Tb.tType = TSET), line, col, 37);
+    Assert(ASR(FLOOR(a), 5) = 0, line, col, 49);
+    Res := LONG(FLT(ORD(FLOOR(a) IN UTILS.FloatToSet(b))))
+  END;
+  IF Relation(Op) OR (Op = lxAnd) OR (Op = lxOR) THEN
+    TRes := sttypes[TBOOLEAN]
+  END
+END Calc;
+
+PROCEDURE ConstExpr*(VAR Value: LONGREAL; VAR T: pTYPE);
+VAR e: EXPRESSION; line, col: INTEGER;
+BEGIN
+  X86.Off;
+  Coord(line, col);
+  sizefunc := FALSE;
+  Expr(e);
+  Assert(~sizefunc & (e.eType = eCONST), line, col, 62);
+  Value := e.Value;
+  T := e.T;
+  X86.On
+END ConstExpr;
+
+PROCEDURE IdType*(VAR line, col: INTEGER): pTYPE;
+VAR id: IDENT; Name: SCAN.NODE; Unit: UNIT; Res: pTYPE;
+BEGIN
+  Res := NIL;
+  Name := SCAN.id;
+  id := GetIdent(Name);
+  IF id = NIL THEN
+    Coord(line, col);
+    NamePtrBase := Name;
+    Next
+  ELSE
+    IF id.iType = IDTYPE THEN
+      Coord(line, col);
+      Next;
+      Res := id.T
+    ELSIF id.iType = IDMOD THEN
+      Unit := id.Unit;
+      Next;
+      Check(lxDot);
+      Next;
+      Check(lxIDENT);
+      Name := SCAN.id;
+      NamePtrBase := Name;
+      id := GetQIdent(Unit, Name);
+      IF Unit # unit THEN
+        Assert2(id # NIL, 42);
+        Assert2(id.iType = IDTYPE, 77);
+        Coord(line, col);
+        Next;
+        Res := id.T
+      ELSE
+        IF id = NIL THEN
+          Assert2((unit.Level = 3) & unit.typedecl, 42);
+          Coord(line, col);
+          Next;
+          Res := NIL
+        ELSE
+          Assert2(id.iType = IDTYPE, 77);
+          Coord(line, col);
+          Next;
+          Res := id.T
+        END
+      END
+    ELSE
+      Assert2(FALSE, 77)
+    END
+  END
+  RETURN Res
+END IdType;
+
+PROCEDURE FieldOffset(Align, RecSize: INTEGER): INTEGER;
+BEGIN
+  Assert2(RecSize <= SCAN.maxINT - (Align - RecSize MOD Align) MOD Align, 88)
+  RETURN RecSize + (Align - RecSize MOD Align) MOD Align
+END FieldOffset;
+
+PROCEDURE SetFields(Tr, Tf: pTYPE; Rec: BOOLEAN);
+VAR cur: UTILS.ITEM;
+BEGIN
+  cur := Tr.Fields.First;
+  WHILE cur(FIELD).T # NIL DO
+    cur := cur.Next
+  END;
+  WHILE cur # NIL DO
+    cur(FIELD).T := Tf;
+    IF Rec THEN
+      cur(FIELD).Offset := FieldOffset(Tf.Align, Tr.Size);
+      IF Tf.Align > Tr.Align THEN
+        Tr.Align := Tf.Align
+      END;
+      Assert2(cur(FIELD).Offset <= SCAN.maxINT - Tf.Size, 88);
+      Tr.Size := cur(FIELD).Offset + Tf.Size
+    END;
+    cur := cur.Next
+  END
+END SetFields;
+
+PROCEDURE GetField*(T: pTYPE; Name: SCAN.NODE): FIELD;
+VAR cur: UTILS.ITEM; Res: FIELD;
+BEGIN
+  Res := NIL;
+  cur := T.Fields.First;
+  WHILE (cur # NIL) & (cur(FIELD).Name = Name) DO
+    Res := cur(FIELD);
+    cur := NIL
+  ELSIF cur # NIL DO
+    cur := cur.Next
+  END
+  RETURN Res
+END GetField;
+
+PROCEDURE Unique(T: pTYPE; Name: SCAN.NODE): BOOLEAN;
+BEGIN
+  WHILE (T # NIL) & (GetField(T, Name) = NIL) DO
+    T := T.Base
+  END
+  RETURN T = NIL
+END Unique;
+
+PROCEDURE ReadFields(T: pTYPE);
+VAR Name: SCAN.NODE; field: FIELD; Tf: pTYPE; line, col: INTEGER;
+BEGIN
+  WHILE SCAN.tLex = lxIDENT DO
+    Name := SCAN.id;
+    Assert2(Unique(T, Name), 30);
+    NEW(field);
+    MemErr(field = NIL);
+    T.Fields.Push(T.Fields, field);
+    field.Name := Name;
+    field.T := NIL;
+    field.Export := FALSE;
+    field.Unit := unit;
+    Next;
+    IF SCAN.tLex = lxMult THEN
+      Assert2(unit.Level = 3, 89);
+      Assert2(unit.typedecl, 91);
+      Assert2(unit.ExportType, 92);
+      field.Export := TRUE;
+      Next
+    END;
+    IF SCAN.tLex = lxComma THEN
+      Next;
+      Check(lxIDENT)
+    ELSIF SCAN.tLex = lxColon THEN
+      Next;
+      Coord(line, col);
+      Tf := pParseType(line, col);
+      Assert(Tf # NIL, line, col, 42);
+      SetFields(T, Tf, TRUE);
+      IF SCAN.tLex = lxSemi THEN
+        Next;
+        Check(lxIDENT)
+      ELSE
+        Assert2(SCAN.tLex = lxEND, 86)
+      END
+    ELSE
+      Assert2(FALSE, 85)
+    END
+  END
+END ReadFields;
+
+PROCEDURE Dim*(T: pTYPE): INTEGER;
+VAR n: INTEGER;
+BEGIN
+  n := 0;
+  WHILE (T.tType = TARRAY) & (T.Len = 0) DO
+    INC(n);
+    T := T.Base
+  END
+  RETURN n
+END Dim;
+
+PROCEDURE OpenBase*(T: pTYPE): pTYPE;
+BEGIN
+  WHILE (T.tType = TARRAY) & (T.Len = 0) DO
+    T := T.Base
+  END
+  RETURN T
+END OpenBase;
+
+PROCEDURE SetVars(T: pTYPE);
+VAR cur: UTILS.ITEM; n: INTEGER;
+BEGIN
+  cur := unit.Idents.Last;
+  WHILE cur(IDENT).T = NIL DO
+    cur := cur.Prev
+  END;
+  cur := cur.Next;
+  WHILE cur # NIL DO
+    cur(IDENT).T := T;
+    cur(IDENT).current := FALSE;
+    IF cur(IDENT).Export THEN
+      Assert(~(T.tType IN {TRECORD, TARRAY}), cur(IDENT).line, cur(IDENT).col, 90)
+    END;
+    IF(cur(IDENT).VarKind = paramvar) OR (cur(IDENT).VarKind = param) & (T.tType IN {TRECORD, TARRAY}) THEN
+      n := 4 * (1 + Dim(T) + ORD((cur(IDENT).VarKind = paramvar) & (T.tType = TRECORD)))
+    ELSE
+      n := T.Size;
+      Assert2(n <= SCAN.maxINT - UTILS.Align(n), 93);
+      n := n + UTILS.Align(n)
+    END;
+    IF cur(IDENT).Level = 3 THEN
+      cur(IDENT).Offset := ProgSize;
+      Assert2(ProgSize <= SCAN.maxINT - n, 93);
+      ProgSize := ProgSize + n;
+      Assert2(ProgSize <= SCAN.maxINT - UTILS.Align(ProgSize), 93);
+      ProgSize := ProgSize + UTILS.Align(ProgSize)
+    ELSE
+      IF cur(IDENT).VarKind = 0 THEN
+        cur(IDENT).Offset := curBlock.ParamSize - curBlock.VarSize - n
+      ELSE
+        cur(IDENT).Offset := curBlock.VarSize - 8 + 4 * (cur(IDENT).Level + ORD((cur(IDENT).VarKind = paramvar) & (T.tType = TRECORD)))
+      END
+    END;
+    Assert2(curBlock.VarSize <= SCAN.maxINT - n, 93);
+    curBlock.VarSize := curBlock.VarSize + n;
+    Assert2(curBlock.VarSize <= SCAN.maxINT - UTILS.Align(curBlock.VarSize), 93);
+    curBlock.VarSize := curBlock.VarSize + UTILS.Align(curBlock.VarSize);
+    IF cur(IDENT).VarKind # 0 THEN
+      curBlock.ParamSize := curBlock.VarSize
+    END;
+    cur := cur.Next
+  END
+END SetVars;
+
+PROCEDURE CreateType(tType, Len, Size, Number: INTEGER; Base: pTYPE; Fields: BOOLEAN): pTYPE;
+VAR nov: pTYPE;
+BEGIN
+  NEW(nov);
+  MemErr(nov = NIL);
+  types.Push(types, nov);
+  nov.tType := tType;
+  nov.Len := Len;
+  nov.Size := Size;
+  nov.Base := Base;
+  nov.Fields := NIL;
+  nov.Number := Number;
+  IF Fields THEN
+    nov.Fields := UTILS.CreateList();
+    MemErr(nov.Fields = NIL)
+  END
+  RETURN nov
+END CreateType;
+
+PROCEDURE FormalType(VAR line, col: INTEGER): pTYPE;
+VAR TA: pTYPE;
+BEGIN
+  IF SCAN.tLex = lxARRAY THEN
+    Next;
+    Check(lxOF);
+    Next;
+    TA := CreateType(TARRAY, 0, 0, 0, FormalType(line, col), FALSE)
+  ELSE
+    Check(lxIDENT);
+    TA := IdType(line, col)
+  END
+  RETURN TA
+END FormalType;
+
+PROCEDURE Section(T: pTYPE);
+VAR Name: SCAN.NODE; ByRef: BOOLEAN; field: FIELD;
+    Tf: pTYPE; fp: IDENT; line, col: INTEGER; proc: BOOLEAN;
+BEGIN
+  proc := T = NIL;
+  IF proc THEN
+    T := curBlock.T
+  END;
+  Assert2((SCAN.tLex = lxIDENT) OR (SCAN.tLex = lxVAR), 84);
+  ByRef := FALSE;
+  IF SCAN.tLex = lxVAR THEN
+    ByRef := TRUE;
+    Next;
+    Check(lxIDENT)
+  END;
+  WHILE SCAN.tLex = lxIDENT DO
+    Name := SCAN.id;
+    Assert2(GetField(T, Name) = NIL, 30);
+    NEW(field);
+    MemErr(field = NIL);
+    T.Fields.Push(T.Fields, field);
+    field.Name := Name;
+    field.T := NIL;
+    field.ByRef := ByRef;
+    IF proc THEN
+      PushIdent(Name, line, col, IDVAR, NIL, NIL, FALSE, 0, TRUE);
+      INC(curBlock.ParamCount);
+      fp := unit.Idents.Last(IDENT);
+      IF ByRef THEN
+        fp.VarKind := paramvar
+      ELSE
+        fp.VarKind := param
+      END
+    END;
+    Next;
+    IF SCAN.tLex = lxComma THEN
+      Next;
+      Check(lxIDENT)
+    ELSIF SCAN.tLex = lxColon THEN
+      Next;
+      Tf := FormalType(line, col);
+      Assert(Tf # NIL, line, col, 42);
+      Assert(Dim(Tf) <= X86.ADIM, line, col, 110);
+      SetFields(T, Tf, FALSE);
+      IF proc THEN
+        SetVars(Tf)
+      END
+    ELSE
+      Assert2(FALSE, 85)
+    END
+  END
+END Section;
+
+PROCEDURE ParamType(T: pTYPE);
+VAR break: BOOLEAN;
+BEGIN
+  IF (SCAN.tLex = lxIDENT) OR (SCAN.tLex = lxVAR) THEN
+    break := FALSE;
+    REPEAT
+      Section(T);
+      IF SCAN.tLex = lxSemi THEN
+        Next
+      ELSE
+        break := TRUE
+      END
+    UNTIL break
+  END
+END ParamType;
+
+PROCEDURE AddPtrBase(Name: SCAN.NODE; line, col: INTEGER; T: pTYPE);
+VAR nov: PTRBASE;
+BEGIN
+  NEW(nov);
+  MemErr(nov = NIL);
+  nov.Name := Name;
+  nov.line := line;
+  nov.col := col;
+  nov.Ptr := T;
+  PtrBases.Push(PtrBases, nov)
+END AddPtrBase;
+
+PROCEDURE FormalList(T: pTYPE; VAR Res: pTYPE);
+VAR line, col: INTEGER;
+BEGIN
+  IF SCAN.tLex = lxLRound THEN
+    Next;
+    ParamType(T);
+    Check(lxRRound);
+    Next;
+    IF SCAN.tLex = lxColon THEN
+      Next;
+      Check(lxIDENT);
+      Res := IdType(line, col);
+      Assert(Res # NIL, line, col, 42);
+      Assert(~(Res.tType IN {TRECORD, TARRAY}), line, col, 82)
+    END
+  END
+END FormalList;
+
+PROCEDURE StructType(Comma: BOOLEAN): pTYPE;
+VAR v: LONGREAL; T, nov: pTYPE; line, col: INTEGER; flag: BOOLEAN;
+BEGIN
+  flag := TRUE;
+  CASE SCAN.tLex OF
+  |lxARRAY, lxComma:
+    flag := FALSE;
+    IF SCAN.tLex = lxComma THEN
+      Assert2(Comma, 39)
+    END;
+    Next;
+    Coord(line, col);
+    ConstExpr(v, T);
+    Assert(T.tType = TINTEGER, line, col, 52);
+    Assert(v > 0.0D0, line, col, 78);
+    nov := CreateType(TARRAY, FLOOR(v), 0, 0, NIL, FALSE);
+    IF SCAN.tLex = lxComma THEN
+      nov.Base := StructType(TRUE)
+    ELSIF SCAN.tLex = lxOF THEN
+      Next;
+      Coord(line, col);
+      nov.Base := pParseType(line, col);
+      Assert(nov.Base # NIL, line, col, 42)
+    ELSE
+      Assert2(FALSE, 79)
+    END;
+    Assert2(nov.Base.Size <= SCAN.maxINT DIV nov.Len, 83);
+    nov.Size := nov.Base.Size * nov.Len;
+    nov.Align := nov.Base.Align
+  |lxRECORD:
+    flag := FALSE;
+    Next;
+    INC(RecCount);
+    nov := CreateType(TRECORD, 0, 0, RecCount, NIL, TRUE);
+    nov.Align := 1;
+    IF SCAN.tLex = lxLRound THEN
+      Next;
+      Check(lxIDENT);
+      nov.Base := IdType(line, col);
+      Assert(nov.Base # NIL, line, col, 42);
+      Assert(nov.Base.tType = TRECORD, line, col, 80);
+      nov.Size := nov.Base.Size;
+      nov.Align := nov.Base.Align;
+      X86.AddRec(nov.Base.Number);
+      Check(lxRRound);
+      Next
+    ELSE
+      X86.AddRec(0)
+    END;
+    ReadFields(nov);
+    Check(lxEND);
+    nov.Size := nov.Size + (nov.Align - nov.Size MOD nov.Align) MOD nov.Align;
+    Next
+  |lxPOINTER:
+    flag := FALSE;
+    Next;
+    Check(lxTO);
+    Next;
+    nov := CreateType(TPOINTER, 0, 4, 0, NIL, FALSE);
+    nov.Align := 4;
+    Coord(line, col);
+    nov.Base := pParseType(line, col);
+    IF nov.Base = NIL THEN
+      Assert(unit.typedecl, line, col, 42);
+      AddPtrBase(NamePtrBase, line, col, nov)
+    ELSE
+      Assert(nov.Base.tType = TRECORD, line, col, 81)
+    END
+  |lxPROCEDURE:
+    flag := FALSE;
+    Next;
+    nov := CreateType(TPROC, 0, 4, 0, sttypes[TVOID], TRUE);
+    nov.Align := 4;
+    FormalList(nov, nov.Base)
+  END;
+  Assert2(~flag, 39)
+  RETURN nov
+END StructType;
+
+PROCEDURE ParseType(VAR line, col: INTEGER): pTYPE;
+VAR Res: pTYPE;
+BEGIN
+  IF SCAN.tLex = lxIDENT THEN
+    Res := IdType(line, col)
+  ELSE
+    Res := StructType(FALSE)
+  END
+  RETURN Res
+END ParseType;
+
+PROCEDURE PopBlock;
+BEGIN
+  WHILE unit.Idents.Last(IDENT).iType # IDGUARD DO
+    unit.Idents.Pop(unit.Idents)
+  END;
+  unit.Idents.Pop(unit.Idents);
+  DEC(unit.Level)
+END PopBlock;
+
+PROCEDURE LinkPtr;
+VAR cur: UTILS.ITEM; id: IDENT;
+BEGIN
+  cur := PtrBases.First;
+  WHILE cur # NIL DO
+    id := GetIdent(cur(PTRBASE).Name);
+    Assert(id # NIL, cur(PTRBASE).line, cur(PTRBASE).col, 42);
+    Assert(id.T.tType = TRECORD, cur(PTRBASE).line, cur(PTRBASE).col, 81);
+    cur(PTRBASE).Ptr.Base := id.T;
+    cur := cur.Next
+  END;
+  PtrBases.Clear(PtrBases)
+END LinkPtr;
+
+PROCEDURE DeclSeq;
+VAR Value: LONGREAL; T: pTYPE; Name: SCAN.NODE; line, col: INTEGER;
+    Export, func: BOOLEAN; last, id: IDENT; e: EXPRESSION;
+
+  PROCEDURE IdentDef;
+  BEGIN
+    Name := SCAN.id;
+    Coord(line, col);
+    Next;
+    Export := FALSE;
+    IF SCAN.tLex = lxMult THEN
+      Assert2(unit.Level = 3, 89);
+      Export := TRUE;
+      Next
+    END
+  END IdentDef;
+
+BEGIN
+  IF SCAN.tLex = lxCONST THEN
+    Next;
+    WHILE SCAN.tLex = lxIDENT DO
+      IdentDef;
+      PushIdent(Name, line, col, IDCONST, NIL, NIL, Export, 0, TRUE);
+      last := unit.Idents.Last(IDENT);
+      Check(lxEQ);
+      Next;
+      ConstExpr(Value, T);
+      Check(lxSemi);
+      last.Value := Value;
+      last.T := T;
+      last.current := FALSE;
+      Next
+    END
+  END;
+  IF SCAN.tLex = lxTYPE THEN
+    PtrBases.Clear(PtrBases);
+    unit.typedecl := TRUE;
+    Next;
+    WHILE SCAN.tLex = lxIDENT DO
+      IdentDef;
+      PushIdent(Name, line, col, IDTYPE, NIL, NIL, Export, 0, TRUE);
+      last := unit.Idents.Last(IDENT);
+      unit.ExportType := Export;
+      Check(lxEQ);
+      Next;
+      T := StructType(FALSE);
+      Check(lxSemi);
+      last.T := T;
+      last.current := FALSE;
+      Next
+    END
+  END;
+  LinkPtr;
+  unit.typedecl := FALSE;
+  unit.ExportType := FALSE;
+  IF SCAN.tLex = lxVAR THEN
+    Next;
+    WHILE SCAN.tLex = lxIDENT DO
+      IdentDef;
+      PushIdent(Name, line, col, IDVAR, NIL, NIL, Export, 0, TRUE);
+      IF SCAN.tLex = lxComma THEN
+        Next;
+        Check(lxIDENT)
+      ELSIF SCAN.tLex = lxColon THEN
+        Next;
+        Coord(line, col);
+        T := ParseType(line, col);
+        Assert(T # NIL, line, col, 42);
+        SetVars(T);
+        Check(lxSemi);
+        Next
+      ELSE
+        Assert2(FALSE, 85)
+      END
+    END
+  END;
+  WHILE SCAN.tLex = lxPROCEDURE DO
+    Next;
+    Check(lxIDENT);
+    IdentDef;
+    PushIdent(Name, line, col, IDPROC, CreateType(TPROC, 0, 4, 0, sttypes[TVOID], TRUE), NIL, Export, 0, FALSE);
+    id := unit.Idents.Last(IDENT);
+    IF id.Export & main THEN
+      X86.ProcExport(id.Number, Name.Name)
+    END;
+    id.Parent := curBlock;
+    curBlock := id;
+    Guard;
+    FormalList(NIL, curBlock.T.Base);
+    Check(lxSemi);
+    Next;
+    DeclSeq;
+    id.LocalSize := id.VarSize - id.ParamSize;
+    X86.ProcBeg(id.Number, id.LocalSize, FALSE);
+    IF SCAN.tLex = lxBEGIN THEN
+      Next;
+      OpSeq
+    END;
+    func := curBlock.T.Base.tType # TVOID;
+    IF func THEN
+      Check(lxRETURN);
+      UTILS.UnitLine(UnitNumber, SCAN.line);
+      Next;
+      Coord(line, col);
+      Expr(e);
+      Assert(AssComp(e, curBlock.T.Base, FALSE), line, col, 125);
+      IF e.eType = eVAR THEN
+        X86.Load(e.T.tType)
+      END
+    ELSE
+      Assert2(SCAN.tLex # lxRETURN, 123)
+    END;
+    Check(lxEND);
+    Next;
+    Check(lxIDENT);
+    Assert2(SCAN.id = Name, 87);
+    Next;
+    Check(lxSemi);
+    Next;
+    X86.ProcEnd(id.Number, id.ParamSize + (id.Level - 3) * 4, func, curBlock.T.Base.tType IN {TREAL, TLONGREAL});
+    PopBlock;
+    curBlock := curBlock.Parent
+  END
+END DeclSeq;
+
+PROCEDURE Rtl(u: UNIT);
+
+  PROCEDURE AddProc(name: SCAN.LEXSTR; num: INTEGER);
+  VAR id: IDENT;
+  BEGIN
+    id := GetQIdent(u, SCAN.AddNode(name));
+    IF id = NIL THEN
+      UTILS.OutString("ошибка: процедура ");
+      UTILS.OutString(name);
+      UTILS.OutString(" в модуле RTL не найдена");
+      UTILS.Ln;
+      SYSTEM.HALT(1)
+    END;
+    X86.AddRtlProc(num, id.Number)
+  END AddProc;
+
+BEGIN
+  AddProc("_newrec", X86._newrec);
+  AddProc("_disprec", X86._disprec);
+  AddProc("_rset", X86._rset);
+  AddProc("_inset", X86._inset);
+  AddProc("_saverec", X86._saverec);
+  AddProc("_fcmp", X86._fcmp);
+  AddProc("_checktype", X86._checktype);
+  AddProc("_strcmp", X86._strcmp);
+  AddProc("_lstrcmp", X86._lstrcmp);
+  AddProc("_rstrcmp", X86._rstrcmp);
+  AddProc("_savearr", X86._savearr);
+  AddProc("_arrayidx", X86._arrayidx);
+  AddProc("_arrayidx1", X86._arrayidx1);
+  AddProc("_arrayrot", X86._arrayrot);
+  AddProc("_assrt", X86._assrt);
+  AddProc("_strcopy", X86._strcopy);
+  AddProc("_init", X86._init);
+  AddProc("_close", X86._close);
+END Rtl;
+
+PROCEDURE ImportList;
+VAR cond, col, line, namecol, nameline: INTEGER;
+    name, alias: SCAN.NODE; u, self: UNIT;
+    FName: UTILS.FILENAME; flag: BOOLEAN;
+
+  PROCEDURE AddUnit(newcond: INTEGER);
+  VAR str: STRITEM;
+  BEGIN
+    u := GetModule(name);
+    IF u = NIL THEN
+      self := unit;
+      SCAN.Backup(unit.scanner);
+      COPY(name.Name, FName);
+      IF ~((~self.Std & pReadModule(Path, FName)) OR pReadModule(Std, FName)) THEN
+        Assert(FName = "SYSTEM", nameline, namecol, 32);
+        unit := sys
+      END;
+      SCAN.Recover(self.scanner);
+      u := unit;
+      unit := self
+    ELSE
+      Assert(u.Closed, nameline, namecol, 31)
+    END;
+    PushIdent(alias, line, col, IDMOD, NIL, u, FALSE, 0, FALSE);
+    NEW(str);
+    MemErr(str = NIL);
+    str.Str := name.Name;
+    unit.Import.Push(unit.Import, str);
+    cond := newcond;
+    IF UTILS.streq(FName, "RTL") THEN
+      Rtl(u);
+      rtl := TRUE
+    END
+  END AddUnit;
+
+BEGIN
+  cond := 0;
+  WHILE cond # 4 DO
+    Next;
+    CASE cond OF
+    |0: Check(lxIDENT);
+        name := SCAN.id;
+        Coord(line, col);
+        Coord(nameline, namecol);
+        alias := name;
+        cond := 1
+    |1: flag := TRUE;
+        CASE SCAN.tLex OF
+        |lxComma:  flag := FALSE; AddUnit(0)
+        |lxSemi:   flag := FALSE; AddUnit(4); Next
+        |lxAssign: flag := FALSE; cond := 2
+        END;
+        Assert2(~flag, 28)
+    |2: Check(lxIDENT);
+        name := SCAN.id;
+        Coord(nameline, namecol);
+        cond := 3
+    |3: flag := TRUE;
+        CASE SCAN.tLex OF
+        |lxComma: flag := FALSE; AddUnit(0)
+        |lxSemi:  flag := FALSE; AddUnit(4); Next
+        END;
+        Assert2(~flag, 29)
+    END
+  END
+END ImportList;
+
+PROCEDURE Header(Name: SCAN.NODE);
+BEGIN
+  NEW(unit);
+  MemErr(unit = NIL);
+  unit.Idents := UTILS.CreateList();
+  MemErr(unit.Idents = NIL);
+  unit.Level := 0;
+  unit.Name := Name;
+  Guard; Guard;
+  PushIdent(unit.Name, 0, 0, IDMOD, NIL, unit, FALSE, 0, FALSE);
+  Guard;
+  unit.IdentBegin := unit.Idents.Last;
+  unit.Closed := TRUE
+END Header;
+
+PROCEDURE Pseudo;
+VAR temp: UNIT;
+BEGIN
+  temp := unit;
+  Header(SCAN.AddNode("SYSTEM"));
+  PushSysProc("ADR",     sysADR);
+  PushSysProc("SIZE",    sysSIZE);
+  PushSysProc("BIT",     sysBIT);
+  PushSysProc("GET",     sysGET);
+  PushSysProc("PUT",     sysPUT);
+  PushSysProc("CODE",    sysCODE);
+  PushSysProc("LOADLIB", sysLOADLIB);
+  PushSysProc("FREELIB", sysFREELIB);
+  PushSysProc("GETPROC", sysGETPROC);
+  PushSysProc("HALT",    sysHALT);
+  PushSysType("CARD16",  TCARD16);
+  sys := unit;
+  unit := temp
+END Pseudo;
+
+PROCEDURE ReadModule(Path, Name1: UTILS.FILENAME): BOOLEAN;
+VAR FHandle: INTEGER; name, Name, b: UTILS.FILENAME; idmod: IDENT; Res, temp: BOOLEAN;
+BEGIN
+  Res := TRUE;
+  name := Name1;
+  Name := Name1;
+  UTILS.concat(Path, Name, b);
+  UTILS.concat(b, ".ob07", Name);
+  IF SCAN.Open(Name, FHandle) THEN
+    NEW(unit);
+    MemErr(unit = NIL);
+    unit.Std := Path = Std;
+    prog.Push(prog, unit);
+    unit.Idents := UTILS.CreateList();
+    MemErr(unit.Idents = NIL);
+    unit.Import := UTILS.CreateList();
+    MemErr(unit.Import = NIL);
+    NEW(unit.scanner);
+    MemErr(unit.scanner = NIL);
+    unit.Closed := FALSE;
+    unit.Level := 0;
+    unit.typedecl := FALSE;
+    unit.ExportType := FALSE;
+    unit.FHandle := FHandle;
+    COPY(Name, unit.File);
+    StIdent;
+    Next; Check(lxMODULE);
+    Next; Check(lxIDENT);
+    Assert2(UTILS.streq(SCAN.id.Name, name), 33);
+    unit.Name := SCAN.id;
+    PushIdent(unit.Name, SCAN.line, SCAN.col, IDMOD, NIL, unit, FALSE, 0, FALSE);
+    idmod := unit.Idents.Last(IDENT);
+    Guard;
+    Next; Check(lxSemi);
+    Next;
+    IF SCAN.tLex = lxIMPORT THEN
+      temp := main;
+      main := FALSE;
+      ImportList;
+      main := temp
+    END;
+    X86.Module(idmod.Name.Name, idmod.Number);
+    UnitNumber := idmod.Number;
+    unit.IdentBegin := unit.Idents.Last;
+    curBlock := idmod;
+    DeclSeq;
+    X86.ProcBeg(idmod.Number, 0, TRUE);
+    IF SCAN.tLex = lxBEGIN THEN
+      Next;
+      OpSeq
+    END;
+    Check(lxEND);
+    Next; Check(lxIDENT);
+    Assert2(SCAN.id = unit.Name, 26);
+    Next; Check(lxDot);
+    unit.Closed := TRUE;
+    unit.Import.Clear(unit.Import);
+    SCAN.Close
+  ELSE
+    Res := FALSE
+  END
+  RETURN Res
+END ReadModule;
+
+PROCEDURE Program*(StdPath, FilePath, NameFile: UTILS.FILENAME; OpSeqProc: opPROC; ExprProc: expPROC; AssCompProc: assPROC; VAR stypes: stTYPES);
+BEGIN
+  RecCount := 0;
+  ProgSize := 0;
+  prog := NIL;
+  types := NIL;
+  Strings := NIL;
+  PtrBases := NIL;
+  sys := NIL;
+  Path := FilePath;
+  Main := NameFile;
+  Std := StdPath;
+  OpSeq := OpSeqProc;
+  Expr := ExprProc;
+  AssComp := AssCompProc;
+  prog := UTILS.CreateList();
+  MemErr(prog = NIL);
+  PtrBases := UTILS.CreateList();
+  MemErr(PtrBases = NIL);
+  types := UTILS.CreateList();
+  MemErr(types = NIL);
+  StTypes;
+  Strings := UTILS.CreateList();
+  MemErr(Strings = NIL);
+  Pseudo;
+  main := TRUE;
+  stypes := sttypes
+END Program;
+
+PROCEDURE Compile*;
+BEGIN
+  IF ~ReadModule(Path, Main) THEN
+    UTILS.OutString("ошибка: файл не найден или ошибка доступа");
+    UTILS.Ln;
+    UTILS.OutString(Path);
+    UTILS.OutString(Main);
+    UTILS.OutString(".ob07");
+    UTILS.Ln;
+    SYSTEM.HALT(1)
+  END;
+  IF ~rtl THEN
+    UTILS.OutString("ошибка: модуль RTL не импортирован");
+    UTILS.Ln;
+    SYSTEM.HALT(1)
+  END
+END Compile;
+
+BEGIN
+  rtl := FALSE;
+  pParseType := ParseType;
+  pReadModule := ReadModule
+END DECL.

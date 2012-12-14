@@ -1,0 +1,150 @@
+MODULE OKCncl;
+
+IMPORT RTL, sys := SYSTEM, Windows;
+
+CONST
+
+  wm_Destroy = 2;
+  cs_HRedraw = {1};
+  cs_VRedraw = {0};
+  idi_Application = 32512;
+  idc_Arrow = 32512;
+  White_Brush = 0;
+  cw_UseDefault = 80000000H;
+  ws_OverlappedWindow = 13565952;
+  WS_VISIBLE = {28};
+  WS_CHILD = {30};
+  BS_DEFPUSHBUTTON = {0};
+
+TYPE
+
+  STRING = ARRAY 256 OF CHAR;
+
+  TPoint = RECORD X, Y: INTEGER END;
+
+  TMsg = RECORD
+    hwnd, message, wParam, lParam, time: INTEGER; pt: TPoint
+  END;
+
+  TWndClass = RECORD
+    style, lpfnWndProc, cbClsExtra, cbWndExtra, hInstance, hIcon, hCursor, hbrBackground, lpszMenuName, lpszClassName: INTEGER
+  END;
+
+  TWinProc = PROCEDURE (Window, Message, WParam, LParam: INTEGER): INTEGER;
+
+VAR
+
+  Res: INTEGER;
+  HInstance: INTEGER;
+  CmdShow: INTEGER;
+  temp: TWinProc;
+  Window, BtnOK, BtnCncl: INTEGER;
+  Message: TMsg;
+  WindowClass: TWndClass;
+  MenuName, AppName, WinName, name: STRING;
+
+  user32, gdi32, kernel32: INTEGER;
+
+  PostQuitMessage: PROCEDURE (nExitCode: INTEGER);
+  DefWindowProc: TWinProc;
+  LoadIcon: PROCEDURE (hInstance, lpIconName: INTEGER): INTEGER;
+  LoadCursor: PROCEDURE (hInstance, lpCursorName: INTEGER): INTEGER;
+  GetStockObject: PROCEDURE (Index: INTEGER): INTEGER;
+  RegisterClass: PROCEDURE (lpWndClass: TWndClass): INTEGER;
+  ShowWindow: PROCEDURE (hWnd, nCmdShow: INTEGER): INTEGER;
+  UpdateWindow: PROCEDURE (hWnd: INTEGER): INTEGER;
+  GetMessage: PROCEDURE (lpMsg: TMsg; hWnd, wMsgFilterMin, wMsgFilterMax: INTEGER): INTEGER;
+  TranslateMessage: PROCEDURE (lpMsg: TMsg): INTEGER;
+  DispatchMessage: PROCEDURE (lpMsg: TMsg): INTEGER;
+  GetModuleHandle: PROCEDURE (lpModuleName: INTEGER): INTEGER;
+  MessageBox: PROCEDURE (hWnd, lpText, lpCaption, uType: INTEGER): INTEGER;
+
+PROCEDURE BtnClick(s: ARRAY OF CHAR);
+VAR Res: INTEGER;
+BEGIN
+  name := "message";
+  Res := MessageBox(Window, sys.ADR(s), sys.ADR(name), 64);
+END BtnClick;
+
+PROCEDURE WindowProc(Window, Message, WParam, LParam: INTEGER): INTEGER;
+BEGIN
+  CASE Message OF
+  |wm_Destroy:
+    PostQuitMessage(0);
+  |0111H:
+    IF LParam = BtnOK THEN
+      BtnClick("OK")
+    ELSIF LParam = BtnCncl THEN
+      BtnClick("Cancel")
+    END;
+  END
+  RETURN DefWindowProc(Window, Message, WParam, LParam)
+END WindowProc;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name));
+  ASSERT(H # 0);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE Init;
+VAR user32, gdi32, kernel32: INTEGER;
+BEGIN
+  user32 := sys.LOADLIB(sys.ADR("user32.dll"));
+  ASSERT(user32 # 0);
+  gdi32 := sys.LOADLIB(sys.ADR("gdi32.dll"));
+  ASSERT(gdi32 # 0);
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  ASSERT(kernel32 # 0);
+  GetProc("PostQuitMessage", user32, sys.ADR(PostQuitMessage));
+  GetProc("DefWindowProcA", user32, sys.ADR(DefWindowProc));
+  GetProc("LoadCursorA", user32, sys.ADR(LoadCursor));
+  GetProc("LoadIconA", user32, sys.ADR(LoadIcon));
+  GetProc("GetStockObject", gdi32, sys.ADR(GetStockObject));
+  GetProc("RegisterClassA", user32, sys.ADR(RegisterClass));
+  GetProc("ShowWindow", user32, sys.ADR(ShowWindow));
+  GetProc("UpdateWindow", user32, sys.ADR(UpdateWindow));
+  GetProc("TranslateMessage", user32, sys.ADR(TranslateMessage));
+  GetProc("DispatchMessageA", user32, sys.ADR(DispatchMessage));
+  GetProc("MessageBoxA", user32, sys.ADR(MessageBox));
+  GetProc("GetMessageA", user32, sys.ADR(GetMessage));
+  GetProc("GetModuleHandleA", kernel32, sys.ADR(GetModuleHandle));
+END Init;
+
+BEGIN
+  Init;
+  CmdShow := 1;
+  HInstance := GetModuleHandle(0);
+  AppName := "OKCncl";
+  MenuName := "";
+  WinName := "OK & Cancel";
+  temp := WindowProc;
+  WindowClass.style := ORD(cs_HRedraw + cs_VRedraw);
+  sys.GET(sys.ADR(temp), WindowClass.lpfnWndProc);
+  WindowClass.cbClsExtra := 0;
+  WindowClass.cbWndExtra := 0;
+  WindowClass.hInstance := 0;
+  WindowClass.hIcon := LoadIcon(0, idi_Application);
+  WindowClass.hCursor := LoadCursor(0, idc_Arrow);
+  WindowClass.hbrBackground := GetStockObject(White_Brush);
+  WindowClass.lpszMenuName := sys.ADR(MenuName);
+  WindowClass.lpszClassName := sys.ADR(AppName);
+  IF RegisterClass(WindowClass) = 0 THEN
+    sys.HALT(255)
+  END;
+  Window := Windows.CreateWindow(sys.ADR(AppName), sys.ADR(WinName),
+    ws_OverlappedWindow, 0, 0, 285, 170, 0, 0, HInstance, 0);
+  BtnOK := Windows.CreateWindow(sys.ADR("BUTTON"), sys.ADR("OK"),
+    ORD(WS_VISIBLE + WS_CHILD + BS_DEFPUSHBUTTON), 10, 10, 250, 50, Window, 0, HInstance, 0);
+  BtnCncl := Windows.CreateWindow(sys.ADR("BUTTON"), sys.ADR("CANCEL"),
+    ORD(WS_VISIBLE + WS_CHILD + BS_DEFPUSHBUTTON), 10, 70, 250, 50, Window, 0, HInstance, 0);
+  Res := ShowWindow(Window, CmdShow);
+  Res := UpdateWindow(Window);
+  WHILE GetMessage(Message, 0, 0, 0) # 0 DO
+    Res := TranslateMessage(Message);
+    Res := DispatchMessage(Message);
+  END;
+  sys.HALT(0)
+END OKCncl.

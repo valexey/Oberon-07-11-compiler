@@ -1,0 +1,353 @@
+MODULE RTL;
+
+IMPORT sys := SYSTEM;
+
+TYPE
+
+  IntArray = ARRAY 2048 OF INTEGER;
+  STRING = ARRAY 2048 OF CHAR;
+  PMemBlock = POINTER TO MemBlock;
+  MemBlock = RECORD Prev, Next: PMemBlock; t: INTEGER END;
+  PROC = PROCEDURE;
+
+VAR
+
+  GlobalAlloc: PROCEDURE (uFlags, dwBytes: INTEGER): INTEGER;
+  GlobalFree: PROCEDURE (hMem: INTEGER): INTEGER;
+  MessageBox: PROCEDURE (hWnd, lpText, lpCaption, uType: INTEGER): INTEGER;
+
+  SelfName, rtab: INTEGER; Last, First: PMemBlock; CloseProc: PROC;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+BEGIN
+  sys.PUT(adr, sys.GETPROC(hMOD, sys.ADR(name[0])))
+END GetProc;
+
+PROCEDURE InitMem;
+VAR ptr: INTEGER;
+BEGIN
+  ptr := GlobalAlloc(64, 12);
+  IF ptr # 0 THEN
+    sys.PUT(sys.ADR(First), ptr);
+    Last := First
+  END
+END InitMem;
+
+PROCEDURE _newrec*(size, t: INTEGER; VAR ptr: INTEGER);
+VAR Block: PMemBlock;
+BEGIN
+  ptr := GlobalAlloc(64, size + 12);
+  IF ptr # 0 THEN
+    sys.PUT(sys.ADR(Block), ptr);
+    Block.Prev := Last;
+    Block.Next := NIL;
+    Block.t := t;
+    Last.Next := Block;
+    Last := Block;
+    INC(ptr, 12)
+  END
+END _newrec;
+
+PROCEDURE _disprec*(VAR ptr: INTEGER);
+VAR Block, Prev, Next: PMemBlock;
+BEGIN
+  IF ptr # 0 THEN
+    DEC(ptr, 12);
+    sys.PUT(sys.ADR(Block), ptr);
+    Prev := Block.Prev;
+    Next := Block.Next;
+    Prev.Next := Next;
+    IF Next # NIL THEN
+      Next.Prev := Prev
+    ELSE
+      Last := Prev
+    END;
+    ptr := GlobalFree(ptr)
+  END
+END _disprec;
+
+PROCEDURE _fcmp*(op: INTEGER; a, b: LONGREAL): BOOLEAN;
+VAR Res: BOOLEAN;
+BEGIN
+  Res := FALSE;
+  sys.CODE("DBE3");
+  CASE op OF
+  |0: sys.CODE("33C0DD4514DC5D0CDFE09E0F94C08845FC")
+  |1: sys.CODE("33C0DD4514DC5D0CDFE09E0F95C08845FC")
+  |2: sys.CODE("33C0DD4514DC5D0CDFE09E0F92C08845FC")
+  |3: sys.CODE("33C0DD4514DC5D0CDFE09E0F97C08845FC")
+  |4: sys.CODE("33C0DD4514DC5D0CDFE09E0F96C08845FC")
+  |5: sys.CODE("33C0DD4514DC5D0CDFE09E0F93C08845FC")
+  END
+  RETURN Res
+END _fcmp;
+
+PROCEDURE _rset*(y, x: INTEGER): INTEGER;
+VAR res: INTEGER;
+BEGIN
+  IF (x > y) OR (ASR(x, 5) # 0) & (ASR(y, 5) # 0) THEN
+    res := 0
+  ELSE
+    IF x < 0 THEN
+      x := 0
+    END;
+    IF y > 31 THEN
+      y := 31
+    END;
+    res := ROR(ASR(80000000H, y - x), 31 - y)
+  END
+  RETURN res
+END _rset;
+
+PROCEDURE _inset*(y, x: INTEGER): BOOLEAN;
+BEGIN
+  RETURN (ASR(x, 5) = 0) & ODD(ROR(y, x))
+END _inset;
+
+PROCEDURE _checktype*(t, r: INTEGER): BOOLEAN;
+VAR rt: INTEGER;
+BEGIN
+  sys.GET(r - 4, rt);
+  WHILE (t # rt) & (rt # 0) DO
+    sys.GET(rtab + rt * 4, rt)
+  END
+  RETURN t = rt
+END _checktype;
+
+PROCEDURE _savearr*(Size, source, dest: INTEGER);
+BEGIN
+  sys.CODE("FC8BD78BC68B7D108B750C8B4D08F3A48BFA8BF0")
+END _savearr;
+
+PROCEDURE _saverec*(dyn, stat, Size, source, dest: INTEGER): BOOLEAN;
+VAR res: BOOLEAN;
+BEGIN
+  res := dyn = stat;
+  IF res THEN
+    _savearr(Size, source, dest)
+  END
+  RETURN res
+END _saverec;
+
+PROCEDURE _arrayidx*(Dim: INTEGER; VAR Arr: IntArray; bsize, idx, c: INTEGER);
+VAR i, m: INTEGER;
+BEGIN
+  m := bsize * idx;
+  FOR i := 4 TO Dim + 2 DO
+    m := m * Arr[i]
+  END;
+  IF (Arr[3] > idx) & (idx >= 0) THEN
+    Arr[3] := c + m
+  ELSE
+    Arr[3] := 0
+  END
+END _arrayidx;
+
+PROCEDURE _arrayidx1*(VAR Arr: IntArray; bsize, idx, c: INTEGER);
+BEGIN
+  IF (Arr[3] > idx) & (idx >= 0) THEN
+    Arr[3] := bsize * idx + c
+  ELSE
+    Arr[3] := 0
+  END
+END _arrayidx1;
+
+PROCEDURE _arrayrot*(m, n: INTEGER; VAR Arr: IntArray);
+VAR i, j, t: INTEGER;
+BEGIN
+  FOR i := 1 TO n DO
+    t := Arr[0];
+    FOR j := 0 TO m + n - 1 DO
+      Arr[j] := Arr[j + 1]
+    END;
+    Arr[m + n] := t
+  END
+END _arrayrot;
+
+PROCEDURE Min(a, b: INTEGER): INTEGER;
+VAR res: INTEGER;
+BEGIN
+  IF a < b THEN
+    res := a
+  ELSE
+    res := b
+  END
+  RETURN res
+END Min;
+
+PROCEDURE _strcopy*(b, blen, a, alen: INTEGER);
+BEGIN
+  _savearr(Min(alen, blen), a, b);
+  IF blen > alen THEN
+    sys.PUT(b + alen, 0X)
+  END
+END _strcopy;
+
+PROCEDURE _strcmp*(op, b, blen, a, alen: INTEGER): BOOLEAN;
+VAR A, B: CHAR; Res, break: BOOLEAN; i, m: INTEGER;
+BEGIN
+  Res := FALSE;
+  break := FALSE;
+  m := Min(alen, blen);
+  i := 0;
+  REPEAT
+    sys.GET(a + i, A);
+    sys.GET(b + i, B);
+    CASE op OF
+    |0: Res := A =  B
+    |1: Res := A #  B
+    |2: Res := A <  B
+    |3: Res := A >  B
+    |4: Res := A <= B
+    |5: Res := A >= B
+    END;
+    INC(i);
+    break := (A # B) OR (A = 0X) & (B = 0X)
+  UNTIL (i = m) OR break;
+  IF ~break THEN
+    IF alen > blen THEN
+      sys.GET(a + alen - 1, A);
+      CASE op OF
+      |0, 4: Res := A = 0X
+      |1, 3: Res := A # 0X
+      |2: Res := FALSE
+      |5: Res := TRUE
+      END
+    ELSIF alen < blen THEN
+      sys.GET(b + blen - 1, B);
+      CASE op OF
+      |0, 5: Res := B = 0X
+      |1, 2: Res := B # 0X
+      |3: Res := FALSE
+      |4: Res := TRUE
+      END
+    END
+  END
+  RETURN Res
+END _strcmp;
+
+PROCEDURE _lstrcmp*(op, b, a, alen: INTEGER): BOOLEAN;
+BEGIN
+  RETURN _strcmp(op, sys.ADR(b), 2, a, alen)
+END _lstrcmp;
+
+PROCEDURE _rstrcmp*(op, b, blen, a: INTEGER): BOOLEAN;
+BEGIN
+  RETURN _strcmp(op, b, blen, sys.ADR(a), 2)
+END _rstrcmp;
+
+PROCEDURE IntToStr(x: INTEGER; VAR str: STRING);
+VAR i, a, b: INTEGER; c: CHAR;
+BEGIN
+  i := 0;
+  a := 0;
+  IF x < 0 THEN
+    x := -x;
+    str[0] := "-";
+    i := 1;
+    a := 1;
+  END;
+  REPEAT
+    str[i] := CHR(x MOD 10 + ORD("0"));
+    x := x DIV 10;
+    INC(i)
+  UNTIL x = 0;
+  b := i - 1;
+  WHILE a < b DO
+    c := str[a];
+    str[a] := str[b];
+    str[b] := c;
+    INC(a);
+    DEC(b)
+  END;
+  str[i] := 0X
+END IntToStr;
+
+PROCEDURE Int(x: INTEGER; VAR str: STRING);
+BEGIN
+  IF x # 80000000H THEN
+    IntToStr(x, str)
+  ELSE
+    str := "-2147483648"
+  END
+END Int;
+
+PROCEDURE StrAppend(VAR str: STRING; VAR pos: INTEGER; s: ARRAY OF CHAR);
+VAR i, n: INTEGER;
+BEGIN
+  n := LEN(s);
+  i := 0;
+  WHILE (i < n) & (s[i] # 0X) DO
+    str[pos] := s[i];
+    INC(pos);
+    INC(i)
+  END
+END StrAppend;
+
+PROCEDURE _assrt*(n, code, m: INTEGER; modname: STRING; line: INTEGER);
+VAR msg, int: STRING; pos, res: INTEGER;
+BEGIN
+  pos := 0;
+  CASE n OF
+  |2: StrAppend(msg, pos, "значение процедурной переменной равно NIL")
+  |3: StrAppend(msg, pos, "ошибка охраны типа")
+  |4: StrAppend(msg, pos, "недопустимый динамический тип")
+  |5: StrAppend(msg, pos, "нарушение границ массива")
+  |6: StrAppend(msg, pos, "значение указателя равно NIL")
+  |8: StrAppend(msg, pos, "целочисленное деление на нуль")
+  |9: StrAppend(msg, pos, "программа прервана процедурой ASSERT")
+  END;
+  StrAppend(msg, pos, 0DX);
+  StrAppend(msg, pos, 0AX);
+  StrAppend(msg, pos, "модуль ");
+  StrAppend(msg, pos, modname);
+  StrAppend(msg, pos, 0DX);
+  StrAppend(msg, pos, 0AX);
+  StrAppend(msg, pos, "строка ");
+  Int(line, int);
+  StrAppend(msg, pos, int);
+  IF m = 2 THEN
+    StrAppend(msg, pos, 0DX);
+    StrAppend(msg, pos, 0AX);
+    StrAppend(msg, pos, "код ");
+    Int(code, int);
+    StrAppend(msg, pos, int)
+  END;
+  res := MessageBox(0, sys.ADR(msg[0]), SelfName, 16)
+END _assrt;
+
+PROCEDURE _close*;
+VAR cur, temp: PMemBlock; n: INTEGER;
+BEGIN
+  IF CloseProc # NIL THEN
+    CloseProc
+  END;
+  cur := Last;
+  WHILE cur # NIL DO
+    temp := cur.Prev;
+    sys.GET(sys.ADR(cur), n);
+    n := GlobalFree(n);
+    cur := temp
+  END
+END _close;
+
+PROCEDURE _init*(self, rec: INTEGER);
+VAR lib: INTEGER;
+BEGIN
+  lib := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("GlobalAlloc", lib, sys.ADR(GlobalAlloc));
+  GetProc("GlobalFree", lib, sys.ADR(GlobalFree));
+  lib := sys.LOADLIB(sys.ADR("user32.dll"));
+  GetProc("MessageBoxA", lib, sys.ADR(MessageBox));
+  InitMem;
+  SelfName := self;
+  rtab := rec;
+  CloseProc := NIL
+END _init;
+
+PROCEDURE SetClose*(proc: PROC);
+BEGIN
+  CloseProc := proc
+END SetClose;
+
+END RTL.

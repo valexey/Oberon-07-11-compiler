@@ -1,0 +1,260 @@
+MODULE Math;
+
+IMPORT sys := SYSTEM;
+
+CONST pi* = 3.141592653589793D0;
+
+TYPE STRING = ARRAY 260 OF CHAR;
+
+VAR INF*, negINF*: LONGREAL;
+
+PROCEDURE IsNan*(x: LONGREAL): BOOLEAN;
+VAR h, l: SET;
+BEGIN
+  sys.GET(sys.ADR(x), l);
+  sys.GET(sys.ADR(x) + 4, h);
+  RETURN (h * {20..30} = {20..30}) & ((h * {0..19} # {}) OR (l * {0..31} # {}))
+END IsNan;
+
+PROCEDURE IsInf*(x: LONGREAL): BOOLEAN;
+VAR h, l: SET;
+BEGIN
+  sys.GET(sys.ADR(x), l);
+  sys.GET(sys.ADR(x) + 4, h);
+  RETURN (h * {20..30} = {20..30}) & (h * {0..19} = {}) & (l * {0..31} = {})
+END IsInf;
+
+PROCEDURE Max(A, B: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF A > B THEN
+    Res := A
+  ELSE
+    Res := B
+  END
+  RETURN Res
+END Max;
+
+PROCEDURE Min(A, B: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF A < B THEN
+    Res := A
+  ELSE
+    Res := B
+  END
+  RETURN Res
+END Min;
+
+PROCEDURE SameValue(A, B: LONGREAL): BOOLEAN;
+VAR Epsilon: LONGREAL; Res: BOOLEAN;
+BEGIN
+  Epsilon := Max(Min(ABS(A), ABS(B)) * 1.0D-12, 1.0D-12);
+  IF A > B THEN
+    Res := (A - B) <= Epsilon
+  ELSE
+    Res := (B - A) <= Epsilon
+  END
+  RETURN Res
+END SameValue;
+
+PROCEDURE IsZero(x: LONGREAL): BOOLEAN;
+BEGIN
+  RETURN ABS(x) <= 1.0D-12
+END IsZero;
+
+PROCEDURE sqrt*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D9FADD5DF8")
+  RETURN Res
+END sqrt;
+
+PROCEDURE exp*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D9EADEC9D9C0D9FCDCE9D9C9D9F0D9E8DEC1D9FDDDD9DD5DF8")
+  RETURN Res
+END exp;
+
+PROCEDURE ln*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3D9E8DD4508D9F1D9EDDEC9DD5DF8")
+  RETURN Res
+END ln;
+
+PROCEDURE sin*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D9FEDD5DF8")
+  RETURN Res
+END sin;
+
+PROCEDURE cos*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D9FFDD5DF8")
+  RETURN Res
+END cos;
+
+PROCEDURE tan*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D9FBDEF9DD5DF8")
+  RETURN Res
+END tan;
+
+PROCEDURE arctan2*(y, x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508DD4510D9F3DD5DF8")
+  RETURN Res
+END arctan2;
+
+PROCEDURE arcsin*(x: LONGREAL): LONGREAL;
+BEGIN
+  RETURN arctan2(x, sqrt(1.0D0 - x * x))
+END arcsin;
+
+PROCEDURE arccos*(x: LONGREAL): LONGREAL;
+BEGIN
+  RETURN arctan2(sqrt(1.0D0 - x * x), x)
+END arccos;
+
+PROCEDURE arctan*(x: LONGREAL): LONGREAL;
+BEGIN
+  RETURN arctan2(x, 1.0D0)
+END arctan;
+
+PROCEDURE frac*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL; cw: INTEGER;
+BEGIN
+  sys.CODE("DBE3DD4508D9C0D97DF4D97DF666814DF6000FD96DF6D9FCD96DF4DEE9DD5DF8")
+  RETURN Res
+END frac;
+
+PROCEDURE round*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3DD4508D97DF4D97DF666814DF60003D96DF6D9FCD96DF4DD5DF8")
+  RETURN Res
+END round;
+
+PROCEDURE sinh*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF IsZero(x) THEN
+    Res := 0.0D0
+  ELSE
+    Res := (exp(x) - exp(-x)) / 2.0D0
+  END
+  RETURN Res
+END sinh;
+
+PROCEDURE cosh*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF IsZero(x) THEN
+    Res := 1.0D0
+  ELSE
+    Res := (exp(x) + exp(-x)) / 2.0D0
+  END
+  RETURN Res
+END cosh;
+
+PROCEDURE tanh*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF IsZero(x) THEN
+    Res := 0.0D0
+  ELSE
+    Res := sinh(x) / cosh(x)
+  END
+  RETURN Res
+END tanh;
+
+PROCEDURE arcsinh*(x: LONGREAL): LONGREAL;
+BEGIN
+  RETURN ln(x + sqrt((x * x) + 1.0D0))
+END arcsinh;
+
+PROCEDURE arccosh*(x: LONGREAL): LONGREAL;
+BEGIN
+  RETURN ln(x + sqrt((x - 1.0D0) / (x + 1.0D0)) * (x + 1.0D0))
+END arccosh;
+
+PROCEDURE arctanh*(x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF SameValue(x, 1.0D0) THEN
+    Res := INF
+  ELSIF SameValue(x, -1.0D0) THEN
+    Res := negINF
+  ELSE
+    Res := 0.5D0 * ln((1.0D0 + x) / (1.0D0 - x))
+  END
+  RETURN Res
+END arctanh;
+
+PROCEDURE floor*(x: LONGREAL): LONGREAL;
+VAR f: LONGREAL;
+BEGIN
+  f := frac(x);
+  x := x - f;
+  IF f < 0.0D0 THEN
+    x := x - 1.0D0
+  END
+  RETURN x
+END floor;
+
+PROCEDURE ceil*(x: LONGREAL): LONGREAL;
+VAR f: LONGREAL;
+BEGIN
+  f := frac(x);
+  x := x - f;
+  IF f > 0.0D0 THEN
+    x := x + 1.0D0
+  END
+  RETURN x
+END ceil;
+
+PROCEDURE power*(base, exponent: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  IF exponent = 0.0D0 THEN
+    Res := 1.0D0
+  ELSIF (base = 0.0D0) & (exponent > 0.0D0) THEN
+    Res := 0.0D0
+  ELSE
+    Res := exp(exponent * ln(base))
+  END
+  RETURN Res
+END power;
+
+PROCEDURE log*(base, x: LONGREAL): LONGREAL;
+VAR Res: LONGREAL;
+BEGIN
+  sys.CODE("DBE3D9E8DD4510D9F1D9E8DD4508D9F1DEF9DD5DF8")
+  RETURN Res
+END log;
+
+PROCEDURE sgn*(x: LONGREAL): INTEGER;
+VAR Res: INTEGER;
+BEGIN
+  IF x > 0.0D0 THEN
+    Res := 1
+  ELSIF x < 0.0D0 THEN
+    Res := -1
+  ELSE
+    Res := 0
+  END
+  RETURN Res
+END sgn;
+
+BEGIN
+  sys.PUT(sys.ADR(INF), 0);
+  sys.PUT(sys.ADR(INF) + 4, 7FF00000H);
+  sys.PUT(sys.ADR(negINF), 0);
+  sys.PUT(sys.ADR(negINF) + 4, 0FFF00000H);
+END Math.

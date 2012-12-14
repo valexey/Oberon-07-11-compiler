@@ -1,0 +1,126 @@
+MODULE Console;
+
+IMPORT sys := SYSTEM;
+
+CONST
+
+  Black* = 0;     Blue* = 1;          Green* = 2;       Cyan* = 3;
+  Red* = 4;       Magenta* = 5;       Brown* = 6;       LightGray* = 7;
+  DarkGray* = 8;  LightBlue* = 9;     LightGreen* = 10; LightCyan* = 11;
+  LightRed* = 12; LightMagenta* = 13; Yellow* = 14;     White* = 15;
+
+TYPE
+
+  STRING = ARRAY 260 OF CHAR;
+
+  TCoord = RECORD
+    X, Y: sys.CARD16
+  END;
+
+  TSmallRect = RECORD
+    Left, Top, Right, Bottom: sys.CARD16
+  END;
+
+  TConsoleScreenBufferInfo = RECORD
+    dwSize: TCoord;
+    dwCursorPosition: TCoord;
+    wAttributes: sys.CARD16;
+    srWindow: TSmallRect;
+    dwMaximumWindowSize: TCoord
+  END;
+
+VAR
+
+  hConsoleOutput: INTEGER;
+  SetConsoleCursorPosition: PROCEDURE(hConsoleOutput, dwCursorPosition: INTEGER): INTEGER;
+  GetConsoleScreenBufferInfo: PROCEDURE(hConsoleOutput: INTEGER; ConsoleScreenBufferInfo: TConsoleScreenBufferInfo): INTEGER;
+  FillConsoleOutputCharacter: PROCEDURE(hConsoleOutput, cCaracter, nLength, dwWriteCoord, lpNumberOfCharsWritten: INTEGER): INTEGER;
+  FillConsoleOutputAttribute: PROCEDURE(hConsoleOutput, wAttribute, nLength, dwWriteCoord, lpNumberOfAttrsWritten: INTEGER): INTEGER;
+  SetConsoleTextAttribute: PROCEDURE(hConsoleOutput, wAttributes: INTEGER): INTEGER;
+  GetStdHandle: PROCEDURE (nStdHandle: INTEGER): INTEGER;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE IntToCard16(i: INTEGER): sys.CARD16;
+VAR w: sys.CARD16;
+BEGIN
+  sys.GET(sys.ADR(i), w)
+  RETURN w
+END IntToCard16;
+
+PROCEDURE Card16ToInt(w: sys.CARD16): INTEGER;
+VAR i: INTEGER;
+BEGIN
+  sys.PUT(sys.ADR(i), w)
+  RETURN i
+END Card16ToInt;
+
+PROCEDURE CoordToInt(Coord: TCoord): INTEGER;
+VAR res: INTEGER;
+BEGIN
+  sys.GET(sys.ADR(Coord), res)
+  RETURN res
+END CoordToInt;
+
+PROCEDURE Cursor*(X, Y: INTEGER);
+VAR Coord: TCoord; res: INTEGER;
+BEGIN
+  Coord.X := IntToCard16(X);
+  Coord.Y := IntToCard16(Y);
+  res := SetConsoleCursorPosition(hConsoleOutput, CoordToInt(Coord));
+END Cursor;
+
+PROCEDURE Cls*;
+VAR fill, res: INTEGER; ScrBufInfo: TConsoleScreenBufferInfo;
+BEGIN
+  res := GetConsoleScreenBufferInfo(hConsoleOutput, ScrBufInfo);
+  fill := Card16ToInt(ScrBufInfo.dwSize.X) * Card16ToInt(ScrBufInfo.dwSize.Y);
+  res := FillConsoleOutputCharacter(hConsoleOutput, 20H, fill, 0, sys.ADR(fill));
+  res := FillConsoleOutputAttribute(hConsoleOutput, Card16ToInt(ScrBufInfo.wAttributes), fill, 0, sys.ADR(fill));
+  Cursor(0, 0);
+END Cls;
+
+PROCEDURE Color*(FColor, BColor: INTEGER);
+VAR attr, res: INTEGER;
+BEGIN
+  IF (FColor IN {0..15}) & (BColor IN {0..15}) THEN
+    res := SetConsoleTextAttribute(hConsoleOutput, LSL(BColor, 4) + FColor)
+  END
+END Color;
+
+PROCEDURE CursorX*(): INTEGER;
+VAR ScrBufInfo: TConsoleScreenBufferInfo; res: INTEGER;
+BEGIN
+  res := GetConsoleScreenBufferInfo(hConsoleOutput, ScrBufInfo)
+  RETURN Card16ToInt(ScrBufInfo.dwCursorPosition.X)
+END CursorX;
+
+PROCEDURE CursorY*(): INTEGER;
+VAR ScrBufInfo: TConsoleScreenBufferInfo; res: INTEGER;
+BEGIN
+  res := GetConsoleScreenBufferInfo(hConsoleOutput, ScrBufInfo)
+  RETURN Card16ToInt(ScrBufInfo.dwCursorPosition.Y)
+END CursorY;
+
+PROCEDURE Init;
+VAR kernel32: INTEGER;
+BEGIN
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("GetStdHandle", kernel32, sys.ADR(GetStdHandle));
+  GetProc("SetConsoleCursorPosition", kernel32, sys.ADR(SetConsoleCursorPosition));
+  GetProc("GetConsoleScreenBufferInfo", kernel32, sys.ADR(GetConsoleScreenBufferInfo));
+  GetProc("FillConsoleOutputCharacterA", kernel32, sys.ADR(FillConsoleOutputCharacter));
+  GetProc("FillConsoleOutputAttribute", kernel32, sys.ADR(FillConsoleOutputAttribute));
+  GetProc("SetConsoleTextAttribute", kernel32, sys.ADR(SetConsoleTextAttribute));
+  hConsoleOutput := GetStdHandle(-11);
+END Init;
+
+BEGIN
+  Init;
+END Console.

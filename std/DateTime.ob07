@@ -1,0 +1,137 @@
+MODULE DateTime;
+
+IMPORT sys := SYSTEM;
+
+CONST ERR* = -7.0D5;
+
+TYPE
+
+  STRING = ARRAY 260 OF CHAR;
+
+  TSystemTime = RECORD
+    Year: sys.CARD16;
+    Month: sys.CARD16;
+    DayOfWeek: sys.CARD16;
+    Day: sys.CARD16;
+    Hour: sys.CARD16;
+    Min: sys.CARD16;
+    Sec: sys.CARD16;
+    MSec: sys.CARD16
+  END;
+
+VAR
+
+  GetLocalTime: PROCEDURE(T: TSystemTime);
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE Card16ToInt(w: sys.CARD16): INTEGER;
+VAR i: INTEGER;
+BEGIN
+  sys.PUT(sys.ADR(i), w)
+  RETURN i
+END Card16ToInt;
+
+PROCEDURE Encode*(Year, Month, Day, Hour, Min, Sec, MSec: INTEGER): LONGREAL;
+VAR d, i: INTEGER; M: ARRAY 13 OF CHAR; Res: LONGREAL;
+BEGIN
+  Res := ERR;
+  IF (Year >= 1) & (Year <= 9999) & (Month >= 1) & (Month <= 12) &
+    (Day >= 1) & (Day <= 31) & (Hour >= 0) & (Hour <= 23) &
+    (Min >= 0) & (Min <= 59) & (Sec >= 0) & (Sec <= 59) &
+    (MSec >= 0) & (MSec <= 999) THEN
+    M := "_303232332323";
+    IF (Year MOD 4 = 0) & (Year MOD 100 # 0) OR (Year MOD 400 = 0) THEN
+      M[2] := "1"
+    END;
+    IF Day <= ORD(M[Month]) - ORD("0") + 28 THEN
+      DEC(Year);
+      d := Year * 365 + (Year DIV 4) - (Year DIV 100) + (Year DIV 400) + Day - 693594;
+      FOR i := 1 TO Month - 1 DO
+        d := d + ORD(M[i]) - ORD("0") + 28
+      END;
+      Res := LONG(FLT(d)) + LONG(FLT(Hour * 3600000 + Min * 60000 + Sec * 1000 + MSec)) / 86400000.0D0
+    END
+  END
+  RETURN Res
+END Encode;
+
+PROCEDURE Decode*(Date: LONGREAL; VAR Year, Month, Day, Hour, Min, Sec, MSec: INTEGER): BOOLEAN;
+VAR Res, flag: BOOLEAN; d, t, i: INTEGER; M: ARRAY 13 OF CHAR;
+
+  PROCEDURE MonthDay(n: INTEGER): BOOLEAN;
+  VAR Res: BOOLEAN;
+  BEGIN
+    Res := FALSE;
+    IF d > ORD(M[n]) - ORD("0") + 28 THEN
+      d := d - ORD(M[n]) + ORD("0") - 28;
+      INC(Month);
+      Res := TRUE;
+    END
+    RETURN Res
+  END MonthDay;
+
+BEGIN
+  IF (Date >= -693593.0D0) & (Date < 2958466.0D0) THEN
+    d := FLOOR(Date);
+    t := FLOOR((Date - LONG(FLT(d))) * 86400000.0D0);
+    d := d + 693593;
+    Year := 1;
+    Month := 1;
+    WHILE d > 0 DO
+      d := d - 365 - ORD((Year MOD 4 = 0) & (Year MOD 100 # 0) OR (Year MOD 400 = 0));
+      INC(Year);
+    END;
+    IF d < 0 THEN
+      DEC(Year);
+      d := d + 365 + ORD((Year MOD 4 = 0) & (Year MOD 100 # 0) OR (Year MOD 400 = 0));
+    END;
+    INC(d);
+    M := "_303232332323";
+    IF (Year MOD 4 = 0) & (Year MOD 100 # 0) OR (Year MOD 400 = 0) THEN
+      M[2] := "1"
+    END;
+    i := 1;
+    flag := TRUE;
+    WHILE flag & (i <= 12) DO
+      flag := MonthDay(i);
+      INC(i);
+    END;
+    Day := d;
+    Hour := t DIV 3600000;
+    t := t MOD 3600000;
+    Min := t DIV 60000;
+    t := t MOD 60000;
+    Sec := t DIV 1000;
+    MSec := t MOD 1000;
+    Res := TRUE;
+  ELSE
+    Res := FALSE
+  END
+  RETURN Res
+END Decode;
+
+PROCEDURE Now*(): LONGREAL;
+VAR T: TSystemTime;
+BEGIN
+  GetLocalTime(T)
+  RETURN Encode(Card16ToInt(T.Year), Card16ToInt(T.Month), Card16ToInt(T.Day),
+    Card16ToInt(T.Hour), Card16ToInt(T.Min), Card16ToInt(T.Sec), Card16ToInt(T.MSec))
+END Now;
+
+PROCEDURE Init;
+VAR kernel32: INTEGER;
+BEGIN
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("GetLocalTime", kernel32, sys.ADR(GetLocalTime));
+END Init;
+
+BEGIN
+  Init;
+END DateTime.

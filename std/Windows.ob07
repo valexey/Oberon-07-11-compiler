@@ -1,0 +1,61 @@
+MODULE Windows;
+
+IMPORT sys := SYSTEM;
+
+TYPE STRING = ARRAY 260 OF CHAR;
+
+VAR
+
+  _CreateWindowEx: PROCEDURE(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y,
+    nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam: INTEGER): INTEGER;
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name[0]));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+PROCEDURE Get8087CW(): sys.CARD16;
+VAR Res: sys.CARD16;
+BEGIN
+  sys.CODE("D97DFC")
+  RETURN Res
+END Get8087CW;
+
+PROCEDURE Set8087CW(NewCW: sys.CARD16);
+BEGIN
+  sys.CODE("DBE2D96D08")
+END Set8087CW;
+
+PROCEDURE CreateWindow*(lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam: INTEGER): INTEGER;
+VAR FPUCW: sys.CARD16; Res: INTEGER;
+BEGIN
+  FPUCW := Get8087CW();
+  Res := _CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, X, Y,
+    nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+  Set8087CW(FPUCW);
+  RETURN Res
+END CreateWindow;
+
+PROCEDURE CreateWindowEx*(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam: INTEGER): INTEGER;
+VAR FPUCW: sys.CARD16; Res: INTEGER;
+BEGIN
+  FPUCW := Get8087CW();
+  Res := _CreateWindowEx(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y,
+    nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+  Set8087CW(FPUCW);
+  RETURN Res
+END CreateWindowEx;
+
+PROCEDURE Init;
+VAR user32: INTEGER;
+BEGIN
+  user32 := sys.LOADLIB(sys.ADR("user32.dll"));
+  GetProc("CreateWindowExA", user32, sys.ADR(_CreateWindowEx));
+END Init;
+
+BEGIN
+  Init;
+END Windows.

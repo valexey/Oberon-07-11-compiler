@@ -1,0 +1,575 @@
+MODULE MyClock;
+
+(* составил С.Г.Можаровский (c) 2004 by sw [URL=http://sw.newmail.ru/]http://sw.newmail.ru/[/URL]            *)
+(* программа которая демонстрирует создание простейшего окна средствами API *)
+
+IMPORT RTL, sys := SYSTEM, Windows;
+
+CONST
+
+  WinClassNm = "myClockWin";
+  SRCCOPY = 0CC0020H;
+  HWND_TOP = 0;
+  SWP_NOSIZE = 1;
+  MK_LBUTTON = 1;
+
+  wm_Destroy = 2;
+  wm_Paint = 15;
+  wm_MouseMove = 512;
+  wm_LButtonDown = 513;
+  wm_LButtonUp = 514;
+
+  cs_HRedraw = {1};
+  cs_VRedraw = {0};
+
+  idc_Arrow = 32512;
+  COLOR_BACKGROUND = 1;
+  TRANSPARENT = 1;
+
+  DT_SINGLELINE = 32;
+  DT_CENTER = 1;
+  DT_VCENTER = 4;
+
+  mb_Ok = 0;
+
+  WS_EX_TOOLWINDOW = 128;
+  WS_EX_TOPMOST = 8;
+  WS_POPUP = 80000000H;
+  WS_BORDER = 00800000H;
+
+TYPE
+
+  PRect = POINTER TO TRect;
+
+  STRING = ARRAY 256 OF CHAR;
+
+  TMessage = RECORD
+    Msg, WParam, LParam, Result: INTEGER
+  END;
+
+  TWMMouse = RECORD
+    Msg, Keys: INTEGER; XPos, YPos: INTEGER
+  END;
+
+  TMsg = RECORD
+    hwnd, message, wParam, lParam, time, pt, private: INTEGER
+  END;
+
+  TPoint = RECORD
+    X, Y: INTEGER
+  END;
+
+  TWndClass = RECORD
+    style, lpfnWndProc, cbClsExtra, cbWndExtra, hInstance, hIcon, hCursor, hbrBackground, lpszMenuName, lpszClassName: INTEGER
+  END;
+
+  TWMPaint = RECORD
+    Msg, DC, Unused, Result: INTEGER
+  END;
+
+  TRect = RECORD Left, Top, Right, Bottom: INTEGER END;
+
+  TPaintStruct = RECORD
+    hdc, fErase: INTEGER; rcPaint: TRect; fRestore, fIncUpdate: INTEGER; rgbReserved: ARRAY 32 OF CHAR
+  END;
+
+  SECURITY_ATTRIBUTES = RECORD
+    nLength, lpSecurityDescriptor, bInheritHandle: INTEGER
+  END;
+
+  PSecurityAttributes = POINTER TO SECURITY_ATTRIBUTES;
+
+  TSystemTime = RECORD
+    wYear: sys.CARD16;
+    wMonth: sys.CARD16;
+    wDayOfWeek: sys.CARD16;
+    wDay: sys.CARD16;
+    wHour: sys.CARD16;
+    wMinute: sys.CARD16;
+    wSecond: sys.CARD16;
+    wMilliseconds: sys.CARD16
+  END;
+
+VAR
+  res, hInstance: INTEGER; CmdShow: INTEGER; temp: PROCEDURE (a: INTEGER): INTEGER;
+
+  BeginPaint, EndPaint: PROCEDURE(hWnd: INTEGER; lpPaint: TPaintStruct): INTEGER;
+  GetClientRect, GetWindowRect: PROCEDURE(hWnd: INTEGER; lpRect: TRect): INTEGER;
+  BitBlt: PROCEDURE(DestDC, X, Y, Width, Height, SrcDC, XSrc, YSrc, Rop: INTEGER): INTEGER;
+  GetCursorPos: PROCEDURE(lpPoint: TPoint): INTEGER;
+  SetWindowPos: PROCEDURE(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags: INTEGER): INTEGER;
+  SetCapture: PROCEDURE(hWnd: INTEGER): INTEGER;
+  ReleaseCapture: PROCEDURE(): INTEGER;
+  PostQuitMessage: PROCEDURE(nExitCode: INTEGER);
+  DefWindowProc: PROCEDURE(h: INTEGER; AMessage, WParam, LParam: INTEGER): INTEGER;
+  GetModuleHandle: PROCEDURE(lpModuleName: INTEGER): INTEGER;
+  LoadCursor: PROCEDURE (hInstance, lpCursorName: INTEGER): INTEGER;
+  RegisterClass: PROCEDURE (lpWndClass: TWndClass): INTEGER;
+  CreateEvent: PROCEDURE(lpEventAttributes: PSecurityAttributes; bManualReset, bInitialState, lpName: INTEGER): INTEGER;
+  WaitForSingleObject: PROCEDURE(hHandle, dwMilliseconds: INTEGER): INTEGER;
+  CloseHandle: PROCEDURE(hObject: INTEGER): INTEGER;
+  GetDesktopWindow: PROCEDURE(): INTEGER;
+  GetCurrentTime: PROCEDURE(): INTEGER;
+  MessageBox: PROCEDURE (hWnd, lpText, lpCaption, uType: INTEGER): INTEGER;
+  ShowWindow: PROCEDURE (hWnd, nCmdShow: INTEGER): INTEGER;
+  GetMessage: PROCEDURE (lpMsg: TMsg; hWnd, wMsgFilterMin, wMsgFilterMax: INTEGER): INTEGER;
+  TranslateMessage: PROCEDURE (lpMsg: TMsg): INTEGER;
+  DispatchMessage: PROCEDURE (lpMsg: TMsg): INTEGER;
+  DeleteDC: PROCEDURE (DC: INTEGER): INTEGER;
+  GetDC: PROCEDURE (hWnd: INTEGER): INTEGER;
+  DeleteObject: PROCEDURE(p1: INTEGER): INTEGER;
+  CreateCompatibleDC: PROCEDURE(DC: INTEGER): INTEGER;
+  CreateCompatibleBitmap: PROCEDURE(DC, Width, Height: INTEGER): INTEGER;
+  SelectObject: PROCEDURE(DC, p2: INTEGER): INTEGER;
+  SetBkMode: PROCEDURE(DC, BkMode: INTEGER): INTEGER;
+  ReleaseDC: PROCEDURE(hWnd, hDC: INTEGER): INTEGER;
+  CreateSolidBrush: PROCEDURE(p1: INTEGER): INTEGER;
+  FillRect: PROCEDURE(hDC: INTEGER; lprc: TRect; hbr: INTEGER): INTEGER;
+  GetLocalTime: PROCEDURE(lpSystemTime: TSystemTime);
+  TextOut: PROCEDURE(DC, X, Y, Str, Count: INTEGER): INTEGER;
+  DrawText: PROCEDURE(hDC, lpString, nCount: INTEGER; lpRect: TRect; uFormat: INTEGER): INTEGER;
+  InvalidateRect: PROCEDURE(hWnd: INTEGER; lpRect: PRect; bErase: INTEGER): INTEGER;
+  CreateThread: PROCEDURE(lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags: INTEGER; VAR lpThreadId: INTEGER): INTEGER;
+
+
+(*-------------------------------*)
+(*     окно программы myClock    *)
+  hWinClock  : INTEGER;  (* handle окна                                       *)
+  hWinParent : INTEGER;  (* handle parent - окна для WinClock                 *)
+  AMessage   : TMsg;  (* переменная для цикла сбора сообщений для WinClock *)
+  x0,y0      : INTEGER;  (* левый верхний угол окна *)
+  w ,h       : INTEGER;  (* ширина и высота окна    *)
+
+(*--------------------------------*)
+(* для перетаскивания окна мышкой *)
+  PMSave : TPoint;    (* в PMSave сохраняем абсолютные координаты мыши    *)
+
+(*--------------------------------*)
+(* "теневой" BITMAP в котором     *)
+(*  происходит предварительное    *)
+(*  рисование                     *)
+  MemDC  : INTEGER;       (* здесь рисуем фон и помещаем текст                *)
+  MemBMP : INTEGER;   (* BMP в памяти, к-рое копируется в окно WinClock   *)
+
+(*--------------------------------*)
+(* дополнительный поток           *)
+(*     который следит за временем *)
+  ThreadID : INTEGER;(* ID потока                                        *)
+  hThread  : INTEGER; (* handle потока                                    *)
+  T        : INTEGER; (* глобальная переменная для дополнительного потока *)
+
+PROCEDURE GetProc(name: STRING; hMOD, adr: INTEGER);
+VAR H: INTEGER;
+BEGIN
+  H := sys.GETPROC(hMOD, sys.ADR(name));
+  ASSERT(H # 0, 2);
+  sys.PUT(adr, H);
+END GetProc;
+
+(*                                                                        *)
+(*========================================================================*)
+(*                      всё для WindowProc                                *)
+(*                                                                        *)
+
+PROCEDURE Win_OnPaint(h:INTEGER; Msg: TWMPaint);
+VAR
+  DC          : INTEGER;
+  PaintStruct : TPaintStruct;
+  r           : TRect;
+  res         : INTEGER;
+BEGIN
+(* внутри OnPaint используется BeginPaint вместо GetDC *)
+  DC := BeginPaint(h, PaintStruct);
+  res := GetClientRect(h,r);                 (* размер копируемого прямоугольника *)
+  res := BitBlt(DC,0,0,r.Right,r.Bottom,MemDC,0,0,SRCCOPY);  (* команда рисования *)
+  res := EndPaint(h,PaintStruct);            (* собственно рисование              *)
+END Win_OnPaint;
+
+PROCEDURE Win_Move(h: INTEGER);
+VAR dx,dy,res : INTEGER; r : TRect; PM : TPoint;
+BEGIN
+  res := GetCursorPos(PM);        (* получить абсолютную текущую позицию мыши *)
+  dx := PM.X - PMSave.X; dy := PM.Y - PMSave.Y; (* изменения координат *)
+  IF (dx # 0) OR (dy # 0) THEN (* если нет изменений - выйти  *)
+    PMSave := PM;            (* запомнить текущую позицию мыши           *)
+    res := GetWindowRect(h,r);      (* выяснить абсолютные координаты окна      *)
+    res := SetWindowPos(h,
+          HWND_TOP,          (* оставлять перемещаемое окно наверху      *)
+         r.Left+dx,r.Top+dy, (* новые координаты левого верхнего угла    *)
+                 0,0,        (* ширину и высоту не задаём, т.к.          *)
+         SWP_NOSIZE);        (* т.к. размер окна не меняем               *)
+  END;
+END Win_Move;
+
+PROCEDURE Win_OnLButtonDown(h: INTEGER; Msg: TWMMouse);
+VAR res: INTEGER;
+BEGIN
+  res := GetCursorPos(PMSave); (* получить и запомнить абсолютные координаты мыши *)
+  res := SetCapture(h);        (* "захватить" мышь окном h                        *)
+END Win_OnLButtonDown;
+
+PROCEDURE Win_OnLButtonUp(h: INTEGER; Msg: TWMMouse);
+VAR res: INTEGER;
+BEGIN
+  res := ReleaseCapture(); (* освободить захват мыши окном *)
+  Win_Move(h);    (* последний сдвиг окна         *)
+END Win_OnLButtonUp;
+
+PROCEDURE BITS(n: INTEGER): SET;
+VAR s: SET;
+BEGIN
+  sys.PUT(sys.ADR(s), n);
+  RETURN s
+END BITS;
+
+PROCEDURE Win_OnMouseMove(h: INTEGER; Msg: TWMMouse);
+BEGIN
+  IF BITS(MK_LBUTTON) <= BITS(Msg.Keys)  (* если удерживается левая кнопка мыши *)
+  THEN Win_Move(h);                 (* то сдвинуть окно                    *)
+  END;
+END Win_OnMouseMove;
+
+PROCEDURE Copy32(src, dest, count: INTEGER);
+VAR i, n: INTEGER;
+BEGIN
+  FOR i := 1 TO count DO
+    sys.GET(src, n);
+    sys.PUT(dest, n);
+    INC(src, 4);
+    INC(dest, 4);
+  END;
+END Copy32;
+
+(* собственно оконная процедура *)
+PROCEDURE Win_WindowProc(h: INTEGER; AMessage, WParam, LParam: INTEGER): INTEGER;
+VAR aMsg : TMessage; res: INTEGER; flag: BOOLEAN; Mouse: TWMMouse; Paint: TWMPaint;
+BEGIN
+  flag := TRUE;
+  res := 0;
+  aMsg.Msg    := AMessage;
+  aMsg.WParam := WParam;
+  aMsg.LParam := LParam;
+  aMsg.Result := 0;
+  Copy32(sys.ADR(aMsg), sys.ADR(Mouse), 4);
+  Copy32(sys.ADR(aMsg), sys.ADR(Paint), 4);
+  CASE AMessage OF
+    |wm_Destroy, 256 : PostQuitMessage(0); flag := FALSE;
+    |wm_Paint        : Win_OnPaint      (h, Paint);
+    |wm_MouseMove    : Win_OnMouseMove  (h, Mouse);
+    |wm_LButtonDown  : Win_OnLButtonDown(h, Mouse);
+    |wm_LButtonUp    : Win_OnLButtonUp  (h, Mouse);
+  END;
+  IF flag THEN
+    res := DefWindowProc(h, AMessage, WParam, LParam);  (* Default *)
+  END;
+  RETURN res
+END Win_WindowProc;
+
+(*            clock  WindowProc                                            *)
+(*=========================================================================*)
+
+(*=========================================================================*)
+(* регистрируем Window Class окна программы                                *)
+
+PROCEDURE Clock_WinRegister(): BOOLEAN;
+VAR WindowClass: TWndClass;
+    Instance   : INTEGER;
+    temp       : PROCEDURE (h: INTEGER; AMessage, WParam, LParam: INTEGER): INTEGER;
+BEGIN
+  temp := Win_WindowProc;
+  Instance := GetModuleHandle(0);
+  WindowClass.style         := ORD(cs_HRedraw + cs_VRedraw); (* перерисовывать *)
+  sys.GET(sys.ADR(temp), WindowClass.lpfnWndProc);
+  WindowClass.cbClsExtra    := 0;        (* доп память к окну      *)
+  WindowClass.cbWndExtra    := 0;        (* - '' -                 *)
+  WindowClass.hInstance     := Instance; (* или SysInit.HInstance; *)
+  WindowClass.hIcon         := 0;        (* или LoadIcon(0, idi_Application); *)
+  WindowClass.hCursor       := LoadCursor(0, idc_Arrow);  (* или 0 *)
+  WindowClass.hbrBackground := COLOR_BACKGROUND; (* COLOR_WINDOW*)
+  WindowClass.lpszMenuName  := 0;
+  WindowClass.lpszClassName := sys.ADR(WinClassNm);
+
+  RETURN RegisterClass(WindowClass) # 0
+END Clock_WinRegister;
+
+(*------------------------------------------------------------------------*)
+(*                                   утилитки                             *)
+
+PROCEDURE Waiting(ms: INTEGER);(* используется вместо Sleep, не загружает проц.*)
+VAR h, res: INTEGER;
+BEGIN
+  h := CreateEvent(NIL, -1, 0, sys.ADR(""));
+  res := WaitForSingleObject(h, ms);
+  res := CloseHandle(h);
+END Waiting;
+
+PROCEDURE length(s: STRING): INTEGER;
+VAR Res: INTEGER;
+BEGIN
+  Res := 0;
+  WHILE s[Res] # 0X DO INC(Res) END
+  RETURN Res
+END length;
+
+PROCEDURE IntToStr(x, n: INTEGER; VAR S: STRING; VAR k: INTEGER); (* 0 <= x < 10^5 *)
+VAR i, j: INTEGER; buf: ARRAY 5 OF INTEGER;
+BEGIN
+  i := 0;
+  REPEAT buf[i] := x MOD 10; x := x DIV 10; INC(i) UNTIL x = 0;
+  FOR j := k TO k + n - i - 1 DO
+    S[j] := "0"
+  END;
+  REPEAT DEC(i); S[j] := CHR(buf[i] + ORD("0")); INC(j) UNTIL i = 0;
+  k := j;
+END IntToStr;
+
+PROCEDURE Card16ToInt(w: sys.CARD16): INTEGER;
+VAR i: INTEGER;
+BEGIN
+  sys.PUT(sys.ADR(i), w)
+  RETURN i
+END Card16ToInt;
+
+PROCEDURE MyTimeToStr(T: TSystemTime; VAR S: STRING);
+VAR k: INTEGER;
+BEGIN
+  k := 0;
+  IntToStr(Card16ToInt(T.wYear), 4, S, k);
+  S[k] := "-"; INC(k);
+  IntToStr(Card16ToInt(T.wMonth), 2, S, k);
+  S[k] := "-"; INC(k);
+  IntToStr(Card16ToInt(T.wDay), 2, S, k);
+  S[k] := " "; INC(k);
+  IntToStr(Card16ToInt(T.wHour), 2, S, k);
+  S[k] := ":"; INC(k);
+  IntToStr(Card16ToInt(T.wMinute), 2, S, k);
+  S[k] := ":"; INC(k);
+  IntToStr(Card16ToInt(T.wSecond), 2, S, k);
+END MyTimeToStr;
+
+(* создаёт BMP в памяти ("в тени"), на котором будем МЕДЛЕННО рисовать *)
+(* и, затем, результаты рисования БЫСТРО бросать в видимое окно        *)
+(*   в конце работы окна созданные теневые BMP и DC надо будет удалить *)
+PROCEDURE GetMemBMP(VAR DC: INTEGER; VAR BMP: INTEGER; w, h: INTEGER);
+VAR
+  hWndCompatible : INTEGER; (* handle Окна рабочего стола    *)
+  hDCCompatible  : INTEGER;  (* handle DC Окна рабочего стола *)
+  res: INTEGER;
+BEGIN
+  hWndCompatible := GetDesktopWindow();      (* handle Окна рабочего стола *)
+(*hWndCompatible := 0;*)                     (* handle Окна всего экрана   *)
+  hDCCompatible  := GetDC(hWndCompatible); (* handle Дисплей-Контекста   *)
+  MemDC  := CreateCompatibleDC(hDCCompatible);
+  MemBMP := CreateCompatibleBitmap(hDCCompatible,w,h);(*w,h=ширина,высота BMP*)
+  res := SelectObject(MemDC,MemBMP);              (* связываем BMP и DC             *)
+  res := ReleaseDC(hWndCompatible,hDCCompatible); (* DC Compatible больше не нужен  *)
+                                        (* WndCompatible освобождать не надо *)
+END GetMemBMP;
+
+(* для очистки поля вывода заданным цветом *)
+PROCEDURE FillRectByColor(DC:INTEGER; r:TRect; Color: INTEGER);
+VAR hBr, hBr0, res : INTEGER;
+BEGIN
+  hBr  := CreateSolidBrush(Color);
+  hBr0 := SelectObject(MemDC,hBr);
+  res := FillRect(DC,r,hBr);
+  res := SelectObject(DC,hBr0);
+  res := DeleteObject(hBr);
+END FillRectByColor;
+
+PROCEDURE RGB(r, g, b: INTEGER): INTEGER;
+BEGIN
+  RETURN r + LSL(g, 8) + LSL(b, 16)
+END RGB;
+
+(*                                   утилитки                             *)
+(*------------------------------------------------------------------------*)
+
+(*========================================================================*)
+(*                       всё для TreadProc                                *)
+(*                                                                        *)
+
+(* BMP перерисовывается, если время (секунды) изменилось *)
+PROCEDURE BMPReFresh;
+VAR
+  r : TRect;
+  S : STRING;
+  T : TSystemTime;
+  C : INTEGER;
+  res: INTEGER;
+BEGIN
+  r.Left := 0; r.Right := w; r.Top := 0; r.Bottom := h;
+  C := RGB(255,255,0);
+(*C := GetBkColor(MemDC); (* не работает, фон всегда получается белый *)*)
+  FillRectByColor(MemDC,r,C);
+
+  GetLocalTime(T);
+  MyTimeToStr(T, S);
+
+  res := SetBkMode(MemDC,TRANSPARENT);
+  (* процедура вывода текста из модуля GDI                       *)
+  (* параметры - шрифт, точка привязки символов к опорной точке  *)
+  (* цвет текста, цвет или прозрачность фона заданы в DC         *)
+  (*res := TextOut(MemDC,10,10,sys.ADR(S[0]),length(S));*)
+
+  (* процедура вывода текста из модуля USER32                    *)
+  (* вместо длины строки можно записать -1,                      *)
+  (*                            если строка нуль-терминированная *)
+  (* кроме параметров, которые действуют и для TextOut можно ещё *)
+  (* задать выравнивание текста относительно прямоугольника r    *)
+  res := DrawText(MemDC, sys.ADR(S[0]), -1, r, ORD(BITS(DT_SINGLELINE) + BITS(DT_CENTER) + BITS(DT_VCENTER)));
+END BMPReFresh;
+
+PROCEDURE AnotherThreadProc(Data : INTEGER) : INTEGER;
+VAR Result, res: INTEGER;
+BEGIN
+  Result := 0;
+  REPEAT
+(*  GetClientRect(hClock,r);*)
+    IF T # GetCurrentTime() THEN
+      T := GetCurrentTime();
+      BMPReFresh;                           (* пора обновить картинку     *)
+      res := InvalidateRect(hWinClock,NIL,0);  (* nil - весь прямоугольник   *)
+(*    InvalidateRect(hWinClock,@r,true); *)   (* r - заданный прямоугольник *)
+    END;
+    Waiting(55);  (* // = Sleep(55);*)
+  UNTIL FALSE;
+(* т.к. выход из repeat не достигается, следущая строка не нужна *)
+(*//PostMessage(hWinClock,wm_Destroy,0,0);*)
+  RETURN Result
+END AnotherThreadProc;
+
+(*============================================================================*)
+(*============================================================================*)
+(*============================================================================*)
+
+PROCEDURE Init;
+VAR user32, gdi32, kernel32: INTEGER;
+BEGIN
+  user32 := sys.LOADLIB(sys.ADR("user32.dll"));
+  ASSERT(user32 # 0);
+  gdi32 := sys.LOADLIB(sys.ADR("gdi32.dll"));
+  ASSERT(gdi32 # 0);
+  kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  ASSERT(kernel32 # 0);
+  GetProc("BeginPaint", user32, sys.ADR(BeginPaint));
+  GetProc("EndPaint", user32, sys.ADR(EndPaint));
+  GetProc("GetClientRect", user32, sys.ADR(GetClientRect));
+  GetProc("GetWindowRect", user32, sys.ADR(GetWindowRect));
+  GetProc("BitBlt", gdi32, sys.ADR(BitBlt));
+  GetProc("GetCursorPos", user32, sys.ADR(GetCursorPos));
+  GetProc("SetWindowPos", user32, sys.ADR(SetWindowPos));
+  GetProc("SetCapture", user32, sys.ADR(SetCapture));
+  GetProc("ReleaseCapture", user32, sys.ADR(ReleaseCapture));
+  GetProc("PostQuitMessage", user32, sys.ADR(PostQuitMessage));
+  GetProc("DefWindowProcA", user32, sys.ADR(DefWindowProc));
+  GetProc("GetModuleHandleA", kernel32, sys.ADR(GetModuleHandle));
+  GetProc("LoadCursorA", user32, sys.ADR(LoadCursor));
+  GetProc("RegisterClassA", user32, sys.ADR(RegisterClass));
+  GetProc("CreateEventA", kernel32, sys.ADR(CreateEvent));
+  GetProc("WaitForSingleObject", kernel32, sys.ADR(WaitForSingleObject));
+  GetProc("CloseHandle", kernel32, sys.ADR(CloseHandle));
+  GetProc("GetDesktopWindow", user32, sys.ADR(GetDesktopWindow));
+  GetProc("GetDC", user32, sys.ADR(GetDC));
+  GetProc("DeleteObject", gdi32, sys.ADR(DeleteObject));
+  GetProc("CreateCompatibleDC", gdi32, sys.ADR(CreateCompatibleDC));
+  GetProc("CreateCompatibleBitmap", gdi32, sys.ADR(CreateCompatibleBitmap));
+  GetProc("SelectObject", gdi32, sys.ADR(SelectObject));
+  GetProc("SetBkMode", gdi32, sys.ADR(SetBkMode));
+  GetProc("ReleaseDC", user32, sys.ADR(ReleaseDC));
+  GetProc("DeleteDC", gdi32, sys.ADR(DeleteDC));
+  GetProc("CreateSolidBrush", gdi32, sys.ADR(CreateSolidBrush));
+  GetProc("FillRect", user32, sys.ADR(FillRect));
+  GetProc("GetLocalTime", kernel32, sys.ADR(GetLocalTime));
+  GetProc("TextOutA", gdi32, sys.ADR(TextOut));
+  GetProc("DrawTextA", user32, sys.ADR(DrawText));
+  GetProc("GetTickCount", kernel32, sys.ADR(GetCurrentTime));
+  GetProc("TranslateMessage", user32, sys.ADR(TranslateMessage));
+  GetProc("DispatchMessageA", user32, sys.ADR(DispatchMessage));
+  GetProc("MessageBoxA", user32, sys.ADR(MessageBox));
+  GetProc("ShowWindow", user32, sys.ADR(ShowWindow));
+  GetProc("GetMessageA", user32, sys.ADR(GetMessage));
+  GetProc("CreateThread", kernel32, sys.ADR(CreateThread));
+  GetProc("InvalidateRect", user32, sys.ADR(InvalidateRect));
+END Init;
+
+BEGIN
+  Init;
+  CmdShow := 1;
+  hInstance := GetModuleHandle(0);
+
+(*=========== регистрируем оконный класс ====================*)
+  IF ~Clock_WinRegister() THEN
+    res := MessageBox(0, sys.ADR("Windows Register failed"), 0, mb_Ok);
+    sys.HALT(0);
+  END;
+
+(*=========== создаём окно ====================*)
+
+  w  := 200; h  := 50;    (* задаём размеры и    *)
+  x0 :=   0; y0 :=   0;    (* начальное положение *)
+
+  hWinParent := GetDesktopWindow(); (* handle окна DeskTop      *)
+(*//hWinParent := 0; *)               (* handle окна всего экрана *)
+  hWinClock :=
+  Windows.CreateWindowEx(
+   ORD(BITS(WS_EX_TOOLWINDOW)    (* - без кнопки на панели задач *)
+(*// or WS_EX_CLIENTEDGE*) (* - модифицирует рамку (Bound) *)
+   + BITS(WS_EX_TOPMOST)),   (* - поверх всех окон           *)
+   sys.ADR(WinClassNm),         (* имя оконного класса          *)
+   sys.ADR(""),                 (* Title - имя окна             *)
+   ORD(BITS(WS_POPUP)          (* $8000 0000    - без заголовка окна            *)
+   + BITS(WS_BORDER))      (* $0080 0000    - тоненькая рамка цвета Border  *)
+(*// or WS_CHILD            - ничего в нашем случае не меняет*)
+(*// or WS_VISIBLE          - если хотим обойтись без вызова ShowWindow*)
+   ,
+   x0,   y0,         (* x0   , y0       cw_UseDefault, cw_UseDefault, *)
+   w ,   h ,         (* width, height   cw_UseDefault, cw_UseDefault, *)
+   hWinParent,       (* hWndDeskTop или hWndFullScreen                *)
+   0,                (* hMenu                                         *)
+   hInstance,        (* описатель приложения                          *)
+   0 );            (* address of window-creation data               *)
+
+  IF hWinClock = 0 THEN
+    res := MessageBox(0, sys.ADR("WinClock Create failed"), sys.ADR(""), mb_Ok);
+    sys.HALT(0);
+  END;
+
+  res := ShowWindow(hWinClock, CmdShow);
+(*//UpdateWindow(hWinClock);*)    (* обновлять окно будет дополнительный поток *)
+
+  GetMemBMP(MemDC,MemBMP,w,h);(* создадим место для рисования "в тени"     *)
+
+  (* дополнительный поток -                                      *)
+  (*   следит за временем и                                      *)
+  (*   заставляет окно перерисовываться, если секунды изменились *)
+  temp := AnotherThreadProc;
+  sys.GET(sys.ADR(temp), res);
+  hThread := CreateThread(
+    0,                  (* указатель на Security Attributs *)
+    0,                    (* начальный размер стека в байтах *)
+    res,                 (* указатель на Thread - функцию   *)
+    0,                  (* аргумент для нового потока      *)
+    0,                    (* флаги создания *)
+    ThreadID              (* хранит 32-разрядный ID потока *)
+    );
+
+(*--------------------------------------------*)
+  (* рабочий цикл основного потока -                           *)
+  (* обрабатывает мышь, клавиатуру (процедурой по умолчанию),  *)
+  (* перерисовку (OnPaint), которая заключается в копировании  *)
+  (* картинки из теневого BMP                                  *)
+
+  WHILE GetMessage(AMessage, 0, 0, 0) # 0 DO
+    res := TranslateMessage(AMessage);
+    res := DispatchMessage(AMessage);
+  END;
+(*--------------------------------------------*)
+
+  res := CloseHandle(hThread);
+
+  res := DeleteObject(MemBMP);
+  res := DeleteDC(MemDC);
+
+  sys.HALT(AMessage.wParam);
+END MyClock.

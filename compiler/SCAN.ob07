@@ -1,0 +1,688 @@
+MODULE SCAN;
+
+IMPORT UTILS, SYSTEM;
+
+CONST
+
+  Tab = 2;
+  maxINT* = 7FFFFFFFH;
+  minINT* = 80000000H;
+  maxREAL* = 3.39E38;
+  maxDBL* = 1.69D308;
+  minREAL* = 1.41E-45;
+  IDLENGTH = 255;
+  STRLENGTH* = 256;
+
+  lxEOF = 0; lxINT = 1; lxREAL = 2; lxSTRING = 3; lxIDENT = 4; lxHEX = 5; lxCHX = 6; lxLONGREAL = 7;
+  lxARRAY = 101; lxBEGIN = 102; lxBY = 103; lxCASE = 104; lxCONST = 105; lxDIV = 106;
+  lxDO = 107; lxELSE = 108; lxELSIF = 109; lxEND = 110; lxFALSE = 111; lxFOR = 112;
+  lxIF = 113; lxIMPORT = 114; lxIN = 115; lxIS = 116; lxMOD = 117; lxMODULE = 118;
+  lxNIL = 119; lxOF = 120; lxOR = 121; lxPOINTER = 122; lxPROCEDURE = 123; lxRECORD = 124;
+  lxREPEAT = 125; lxRETURN = 126; lxTHEN = 127; lxTO = 128; lxTRUE = 129; lxTYPE = 130;
+  lxUNTIL = 131; lxVAR = 132; lxWHILE = 133;
+  lxPlus = 301; lxMinus = 302; lxMult = 303; lxSlash = 304; lxNot = 305; lxAnd = 306;
+  lxComma = 307; lxSemi = 308; lxStick = 309; lxLRound = 310; lxLSquare = 311;
+  lxLCurly = 312; lxCaret = 313; lxEQ = 314; lxNE = 315; lxRRound = 316; lxRSquare = 317;
+  lxRCurly = 318; lxDot = 319; lxDbl = 320; lxGT = 321; lxGE = 322; lxLT = 323;
+  lxLE = 324; lxAssign = 325; lxColon = 326;
+  lxERR0 = 200; lxERR1 = 201; lxERR2 = 202; lxERR3 = 203; lxERR4 = 204; lxERR5 = 205; lxERR6 = 206;
+  lxERR7 = 207; lxERR8 = 208; lxERR9 = 209; lxERR10 = 210; lxERR11 = 211; lxERR20 = 220;
+
+TYPE
+
+  NODE* = POINTER TO rNODE;
+
+  rNODE* = RECORD
+    Left, Right: NODE;
+    tLex: INTEGER;
+    Name*: UTILS.STRING
+  END;
+
+  LEXSTR* = ARRAY 1030 OF CHAR;
+
+  SCANNER* = POINTER TO RECORD
+    File, ccol, cline, count, col, line, tLex, vINT: INTEGER;
+    ch, vCHX: CHAR;
+    Lex: LEXSTR;
+    vFLT: LONGREAL;
+    id: NODE
+  END;
+
+VAR
+
+  Lex: LEXSTR; File, ccol, cline, count*, col*, line*, tLex*, vINT*: INTEGER;
+  vFLT*: LONGREAL; id*, Root: NODE; ch, vCHX*, Buf: CHAR; Buffer: BOOLEAN;
+
+PROCEDURE MemErr*(err: BOOLEAN);
+BEGIN
+  IF err THEN
+    UTILS.OutString("ошибка: недостаточно памяти для завершения компиляции");
+    UTILS.Ln;
+    SYSTEM.HALT(1)
+  END
+END MemErr;
+
+PROCEDURE AddNode*(Name: LEXSTR): NODE;
+VAR cur, res: NODE;
+
+  PROCEDURE NewNode(Right: BOOLEAN);
+  BEGIN
+    NEW(res);
+    MemErr(res = NIL);
+    COPY(Name, res.Name);
+    res.tLex := lxIDENT;
+    res.Left := NIL;
+    res.Right := NIL;
+    IF Right THEN
+      cur.Right := res
+    ELSE
+      cur.Left := res
+    END;
+    cur := NIL
+  END NewNode;
+
+BEGIN
+  res := NIL;
+  cur := Root;
+  WHILE cur # NIL DO
+    IF Name > cur.Name THEN
+      IF cur.Right # NIL THEN
+        cur := cur.Right
+      ELSE
+        NewNode(TRUE)
+      END
+    ELSIF Name < cur.Name THEN
+      IF cur.Left # NIL THEN
+        cur := cur.Left
+      ELSE
+        NewNode(FALSE)
+      END
+    ELSE
+      res := cur;
+      cur := NIL
+    END
+  END
+  RETURN res
+END AddNode;
+
+PROCEDURE GetLexStr*(VAR L: LEXSTR);
+BEGIN
+  COPY(Lex, L)
+END GetLexStr;
+
+PROCEDURE Backup*(scanner: SCANNER);
+BEGIN
+  scanner.File := File;
+  scanner.ccol := ccol;
+  scanner.cline := cline;
+  scanner.ch := ch;
+  scanner.Lex := Lex;
+  scanner.count := count;
+  scanner.col := col;
+  scanner.line := line;
+  scanner.tLex := tLex;
+  scanner.vINT := vINT;
+  scanner.vFLT := vFLT;
+  scanner.vCHX := vCHX
+END Backup;
+
+PROCEDURE Recover*(scanner: SCANNER);
+BEGIN
+  File := scanner.File;
+  ccol := scanner.ccol;
+  cline := scanner.cline;
+  ch := scanner.ch;
+  Lex := scanner.Lex;
+  count := scanner.count;
+  col := scanner.col;
+  line := scanner.line;
+  tLex := scanner.tLex;
+  vINT := scanner.vINT;
+  vFLT := scanner.vFLT;
+  vCHX := scanner.vCHX
+END Recover;
+
+PROCEDURE BufChar;
+BEGIN
+  IF ~UTILS.Char(File, Buf) THEN
+    Buf := 0X
+  END;
+  Buffer := TRUE
+END BufChar;
+
+PROCEDURE Next;
+VAR flag: BOOLEAN;
+BEGIN
+  IF Buffer THEN
+    ch := Buf;
+    Buffer := FALSE
+  ELSIF ~UTILS.Char(File, ch) THEN
+    ch := 0X
+  END;
+  flag := FALSE;
+  CASE ch OF
+  |0AX: ccol := 0; flag := TRUE
+  |0DX: INC(cline); flag := TRUE
+  |09X: ccol := ccol + Tab - (ccol - 1) MOD Tab; flag := TRUE
+  END;
+  IF ~flag THEN
+    INC(ccol)
+  END
+END Next;
+
+PROCEDURE Open*(FName: ARRAY OF CHAR; VAR FHandle: INTEGER): BOOLEAN;
+BEGIN
+  File := UTILS.OpenF(FName, 0);
+  FHandle := File;
+  IF File > 0 THEN
+    ccol := 0;
+    cline := 1;
+    ch := 0X;
+    Next
+  END
+  RETURN File > 0
+END Open;
+
+PROCEDURE Close*;
+BEGIN
+  UTILS.CloseF(File)
+END Close;
+
+PROCEDURE Space(ch: CHAR): BOOLEAN;
+BEGIN
+  RETURN (ch <= 20X) & (ch > 0X)
+END Space;
+
+PROCEDURE Letter(ch: CHAR): BOOLEAN;
+BEGIN
+  RETURN (ch >= "A") & (ch <= "Z") OR (ch >= "a") & (ch <= "z") OR (ch = "_")
+END Letter;
+
+PROCEDURE Digit*(ch: CHAR): BOOLEAN;
+BEGIN
+  RETURN (ch >= "0") & (ch <= "9")
+END Digit;
+
+PROCEDURE HexDigit*(ch: CHAR): BOOLEAN;
+BEGIN
+  RETURN (ch >= "A") & (ch <= "F") OR (ch >= "0") & (ch <= "9")
+END HexDigit;
+
+PROCEDURE PutChar(ch: CHAR);
+BEGIN
+  Lex[count] := ch;
+  IF ch # 0X THEN
+    INC(count)
+  END
+END PutChar;
+
+PROCEDURE PutNext(ch: CHAR);
+BEGIN
+  PutChar(ch);
+  Next
+END PutNext;
+
+PROCEDURE Ident;
+BEGIN
+  count := 0;
+  tLex := lxIDENT;
+  WHILE Letter(ch) OR Digit(ch) DO
+    PutNext(ch)
+  END;
+  PutChar(0X);
+  IF count > IDLENGTH THEN
+    tLex := lxERR10
+  END
+END Ident;
+
+PROCEDURE hex*(ch: CHAR): INTEGER;
+VAR Res: INTEGER;
+BEGIN
+  Res := ORD(ch);
+  CASE ch OF
+  |"0".."9": DEC(Res, ORD("0"))
+  |"A".."F": DEC(Res, ORD("A") - 10)
+  END
+  RETURN Res
+END hex;
+
+PROCEDURE StrToInt16(str: LEXSTR): INTEGER;
+VAR i, res, n: INTEGER; flag: BOOLEAN;
+BEGIN
+  res := 0;
+  i := 0;
+  n := 0;
+  WHILE str[i] = "0" DO
+    INC(i)
+  END;
+  flag := TRUE;
+  WHILE flag & (str[i] # "X") & (str[i] # "H") DO
+    INC(n);
+    IF n > 8 THEN
+      tLex := lxERR5;
+      flag := FALSE
+    ELSE
+      res := LSL(res, 4) + hex(str[i]);
+      INC(i)
+    END
+  END
+  RETURN res
+END StrToInt16;
+
+PROCEDURE StrToChx(str: LEXSTR): CHAR;
+VAR res: INTEGER;
+BEGIN
+  res := StrToInt16(str);
+  IF (res < 0) OR (res > 0FFH) THEN
+    tLex := lxERR6;
+    res := 0
+  END
+  RETURN CHR(res)
+END StrToChx;
+
+PROCEDURE StrToInt*(str: ARRAY OF CHAR): INTEGER;
+VAR i, res: INTEGER; flag: BOOLEAN;
+BEGIN
+  res := 0;
+  i := 0;
+  flag := TRUE;
+  WHILE flag & (str[i] # 0X) DO
+    IF res > maxINT DIV 10 THEN
+      tLex := lxERR5;
+      flag := FALSE;
+      res := 0
+    ELSE
+      res := res * 10;
+      IF res > maxINT - (ORD(str[i]) - ORD("0")) THEN
+        tLex := lxERR5;
+        flag := FALSE;
+        res := 0
+      ELSE
+        res := res + (ORD(str[i]) - ORD("0"));
+        INC(i)
+      END
+    END
+  END
+  RETURN res
+END StrToInt;
+
+PROCEDURE StrToFloat(str: LEXSTR): LONGREAL;
+VAR i, scale: INTEGER; res, m, d: LONGREAL; minus, nez: BOOLEAN;
+
+  PROCEDURE Error(e: INTEGER; VAR cont: BOOLEAN);
+  BEGIN
+    tLex := e;
+    res := 0.0D0;
+    cont := FALSE
+  END Error;
+
+  PROCEDURE Inf(VAR cont: BOOLEAN; VAR i: INTEGER);
+  BEGIN
+    IF UTILS.IsInf(res) THEN
+      Error(lxERR7, cont)
+    END;
+    INC(i)
+  END Inf;
+
+  PROCEDURE part1(): BOOLEAN;
+  VAR cont: BOOLEAN;
+  BEGIN
+    res := 0.0D0;
+    i := 0;
+    d := 1.0D0;
+    nez := FALSE;
+    cont := TRUE;
+    WHILE cont & Digit(str[i]) DO
+      nez := nez OR (str[i] # "0");
+      res := res * 10.0D0 + LONG(FLT(ORD(str[i]) - ORD("0")));
+      Inf(cont, i)
+    END
+    RETURN cont
+  END part1;
+
+  PROCEDURE part2(): BOOLEAN;
+  VAR cont: BOOLEAN;
+  BEGIN
+    INC(i);
+    cont := TRUE;
+    WHILE cont & Digit(str[i]) DO
+      nez := nez OR (str[i] # "0");
+      d := d / 10.0D0;
+      res := res + LONG(FLT(ORD(str[i]) - ORD("0"))) * d;
+      Inf(cont, i)
+    END
+    RETURN cont
+  END part2;
+
+  PROCEDURE part3(): BOOLEAN;
+  VAR cont: BOOLEAN;
+  BEGIN
+    cont := TRUE;
+    IF str[i] = 0X THEN
+      IF res > LONG(maxREAL) THEN
+        Error(lxERR7, cont)
+      ELSIF nez & ((res = 0.0D0) OR (res < LONG(minREAL)) & (tLex = lxREAL)) THEN
+        Error(lxERR9, cont)
+      END
+    END
+    RETURN cont
+  END part3;
+
+  PROCEDURE part4(): BOOLEAN;
+  VAR cont: BOOLEAN;
+  BEGIN
+    IF str[i] = "D" THEN
+      tLex := lxLONGREAL
+    END;
+    INC(i);
+    m := 10.0D0;
+    minus := FALSE;
+    IF str[i] = "+" THEN
+      INC(i)
+    ELSIF str[i] = "-" THEN
+      minus := TRUE;
+      INC(i);
+      m := 0.1D0
+    END;
+    scale := 0;
+    cont := TRUE;
+    WHILE cont & Digit(str[i]) DO
+      IF scale > maxINT DIV 10 THEN
+        Error(lxERR8, cont)
+      ELSE
+        scale := scale * 10;
+        IF scale > maxINT - (ORD(str[i]) - ORD("0")) THEN
+          Error(lxERR8, cont)
+        ELSE
+          scale := scale + (ORD(str[i]) - ORD("0"));
+          INC(i)
+        END
+      END
+    END
+    RETURN cont
+  END part4;
+
+  PROCEDURE part5(): BOOLEAN;
+  VAR cont: BOOLEAN; i: INTEGER;
+  BEGIN
+    cont := TRUE;
+    IF scale = maxINT THEN
+      Error(lxERR8, cont)
+    END;
+    i := 1;
+    WHILE cont & (i <= scale) DO
+      res := res * m;
+      Inf(cont, i)
+    END;
+    IF cont & (nez & (res = 0.0D0) OR (res > 0.0D0) & (res < LONG(minREAL)) & (tLex = lxREAL)) THEN
+      Error(lxERR9, cont)
+    ELSIF cont & (tLex = lxREAL) & (res > LONG(maxREAL)) THEN
+      Error(lxERR7, cont)
+    END
+    RETURN cont
+  END part5;
+
+BEGIN
+  IF part1() & part2() & part3() & part4() & part5() THEN END
+  RETURN res
+END StrToFloat;
+
+PROCEDURE Number;
+BEGIN
+  count := 0;
+  tLex := lxINT;
+  WHILE Digit(ch) DO
+    PutNext(ch)
+  END;
+  IF ch = "H" THEN
+    tLex := lxHEX
+  ELSIF ch = "X" THEN
+    tLex := lxCHX
+  END;
+  IF tLex # lxINT THEN
+    PutNext(ch)
+  ELSE
+    WHILE HexDigit(ch) DO
+      tLex := lxHEX;
+      PutNext(ch)
+    END;
+    IF tLex = lxHEX THEN
+      IF ch = "H" THEN
+        PutNext(ch)
+      ELSIF ch = "X" THEN
+        tLex := lxCHX;
+        PutNext(ch)
+      ELSE
+        tLex := lxERR1
+      END
+    ELSIF ch = "." THEN
+      BufChar;
+      IF Buf # "." THEN
+        tLex := lxREAL;
+        PutNext(ch);
+        WHILE Digit(ch) DO
+          PutNext(ch)
+        END;
+        IF (ch = "E") OR (ch = "D") THEN
+          PutNext(ch);
+          IF (ch = "+") OR (ch = "-") THEN
+            PutNext(ch)
+          END;
+          IF ~Digit(ch) THEN
+            tLex := lxERR2
+          ELSE
+            WHILE Digit(ch) DO
+              PutNext(ch)
+            END
+          END
+        END
+      END
+    END
+  END;
+  PutChar(0X)
+END Number;
+
+PROCEDURE Delim(ch: CHAR): INTEGER;
+VAR Res: INTEGER;
+BEGIN
+  Res := 0;
+  CASE ch OF
+  |"+": Res := lxPlus
+  |"-": Res := lxMinus
+  |"*": Res := lxMult
+  |"/": Res := lxSlash
+  |"~": Res := lxNot
+  |"&": Res := lxAnd
+  |",": Res := lxComma
+  |";": Res := lxSemi
+  |"|": Res := lxStick
+  |"[": Res := lxLSquare
+  |"{": Res := lxLCurly
+  |"^": Res := lxCaret
+  |"=": Res := lxEQ
+  |"#": Res := lxNE
+  |")": Res := lxRRound
+  |"]": Res := lxRSquare
+  |"}": Res := lxRCurly
+  |">": Res := lxGT
+  |"<": Res := lxLT
+  |":": Res := lxColon
+  END
+  RETURN Res
+END Delim;
+
+PROCEDURE Comment;
+VAR c, level: INTEGER; flag, cont: BOOLEAN;
+BEGIN
+  c := 1;
+  level := 1;
+  cont := TRUE;
+  WHILE cont & (level > 0) DO
+    Next;
+    flag := TRUE;
+    CASE ch OF
+    |"(": flag := FALSE; c := 2
+    |")": flag := FALSE; IF c = 3 THEN DEC(level) END; c := 1
+    |"*": flag := FALSE; IF c = 2 THEN INC(level); c := 1 ELSE c := 3 END
+    |0X:  flag := FALSE; cont := FALSE
+    END;
+    IF flag THEN
+      c := 1
+    END
+  END;
+  IF cont THEN
+    Next
+  END
+END Comment;
+
+PROCEDURE GetLex*;
+VAR flag: BOOLEAN;
+BEGIN
+  WHILE Space(ch) DO
+    Next
+  END;
+  col := ccol;
+  line := cline;
+  flag := TRUE;
+  CASE ch OF
+  |"A".."Z", "a".."z", "_":
+    flag := FALSE;
+    Ident;
+    id := AddNode(Lex);
+    tLex := id.tLex;
+  |"0".."9":
+    flag := FALSE;
+    Number;
+    CASE tLex OF
+    |lxINT:  vINT := StrToInt(Lex)
+    |lxHEX:  vINT := StrToInt16(Lex)
+    |lxCHX:  vCHX := StrToChx(Lex)
+    |lxREAL: vFLT := StrToFloat(Lex)
+    END
+  |22X:
+    flag := FALSE;
+    count := 0;
+    tLex := lxSTRING;
+    Next;
+    WHILE (ch # 22X) & (ch >= 20X) DO
+      PutNext(ch)
+    END;
+    IF ch = 22X THEN
+      Next
+    ELSE
+      tLex := lxERR3
+    END;
+    PutChar(0X);
+    INC(count);
+    IF count > STRLENGTH THEN
+      tLex := lxERR11
+    END
+  |">", "<", ":":
+    flag := FALSE;
+    count := 0;
+    tLex := Delim(ch);
+    PutNext(ch);
+    IF ch = "=" THEN
+      CASE tLex OF
+      |lxLT:    tLex := lxLE
+      |lxGT:    tLex := lxGE
+      |lxColon: tLex := lxAssign
+      END;
+      PutNext(ch)
+    END;
+    PutChar(0X)
+  |".":
+    flag := FALSE;
+    count := 0;
+    tLex := lxDot;
+    PutNext(ch);
+    IF ch = "." THEN
+      tLex := lxDbl;
+      PutNext(ch)
+    END;
+    PutChar(0X)
+  |"(":
+    flag := FALSE;
+    count := 0;
+    tLex := lxLRound;
+    PutNext(ch);
+    IF ch = "*" THEN
+      Comment;
+      GetLex
+    END;
+    PutChar(0X)
+  |"+", "-", "*", "/", "~", "&", ",", ";", "|",
+   "[", "{", "^", "=", "#", ")", "]", "}":
+    flag := FALSE;
+    count := 0;
+    tLex := Delim(ch);
+    PutChar(ch);
+    PutNext(0X)
+  |0X:
+    flag := FALSE;
+    count := 0;
+    tLex := lxEOF;
+    PutChar(0X)
+  END;
+  IF flag THEN
+    count := 0;
+    tLex := lxERR4;
+    PutChar(ch);
+    count := 0;
+    PutNext(0X)
+  END
+END GetLex;
+
+PROCEDURE AddNodeKey(Name: LEXSTR; key: INTEGER);
+VAR node: NODE;
+BEGIN
+  node := AddNode(Name);
+  node.tLex := key
+END AddNodeKey;
+
+PROCEDURE Init;
+BEGIN
+  NEW(Root);
+  MemErr(Root = NIL);
+  Root.Name := "N";
+  Root.tLex := lxIDENT;
+  Root.Left := NIL;
+  Root.Right := NIL;
+  AddNodeKey("ARRAY", lxARRAY);
+  AddNodeKey("BEGIN", lxBEGIN);
+  AddNodeKey("BY", lxBY);
+  AddNodeKey("CASE", lxCASE);
+  AddNodeKey("CONST", lxCONST);
+  AddNodeKey("DIV", lxDIV);
+  AddNodeKey("DO", lxDO);
+  AddNodeKey("ELSE", lxELSE);
+  AddNodeKey("ELSIF", lxELSIF);
+  AddNodeKey("END", lxEND);
+  AddNodeKey("FALSE", lxFALSE);
+  AddNodeKey("FOR", lxFOR);
+  AddNodeKey("IF", lxIF);
+  AddNodeKey("IMPORT", lxIMPORT);
+  AddNodeKey("IN", lxIN);
+  AddNodeKey("IS", lxIS);
+  AddNodeKey("MOD", lxMOD);
+  AddNodeKey("MODULE", lxMODULE);
+  AddNodeKey("NIL", lxNIL);
+  AddNodeKey("OF", lxOF);
+  AddNodeKey("OR", lxOR);
+  AddNodeKey("POINTER", lxPOINTER);
+  AddNodeKey("PROCEDURE", lxPROCEDURE);
+  AddNodeKey("RECORD", lxRECORD);
+  AddNodeKey("REPEAT", lxREPEAT);
+  AddNodeKey("RETURN", lxRETURN);
+  AddNodeKey("THEN", lxTHEN);
+  AddNodeKey("TO", lxTO);
+  AddNodeKey("TRUE", lxTRUE);
+  AddNodeKey("TYPE", lxTYPE);
+  AddNodeKey("UNTIL", lxUNTIL);
+  AddNodeKey("VAR", lxVAR);
+  AddNodeKey("WHILE", lxWHILE)
+END Init;
+
+BEGIN
+  Init
+END SCAN.
