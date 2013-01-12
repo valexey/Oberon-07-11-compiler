@@ -20,7 +20,7 @@ CONST
 
   sysBIT* = 103; sysLOADLIB* = 107; sysFREELIB* = 108; sysGETPROC* = 109; sysHALT* = 110;
 
-  JE = 84X; JECXZ = 0E3X; JMP* = 0E9X; CALL = 0E8X; JLE = 8EX; JGE = 8DX; JG = 8FX; JL = 8CX;
+  JE = 84X; JMP* = 0E9X; CALL = 0E8X; JLE = 8EX; JGE = 8DX; JG = 8FX; JL = 8CX;
 
   JCMD = 1; LCMD = 2; GCMD = 3; OCMD = 4; ECMD = 5;
   PUSHEAX = 6; PUSHECX = 7; PUSHEDX = 8; POPEAX = 9; POPECX = 10; POPEDX = 11;
@@ -221,7 +221,6 @@ BEGIN
 END Err;
 
 PROCEDURE Align(n, m: INTEGER): INTEGER;
-BEGIN
   RETURN n + (m - n MOD m) MOD m
 END Align;
 
@@ -288,6 +287,7 @@ BEGIN
   heapalloc := 100000H;
   acodesize := Align(codesize, 1000H) + 1000H;
   adr := sys.ADR(rdata);
+
   InitArray(adr, "BE0000008E0000009C000000AC0000000000000074000000000000006C000000");
   InitArray(adr, "00000000000000008200000014000000580000000000000000000000CC000000");
   InitArray(adr, "000000000000000000000000000000000000000000000000BE0000008E000000");
@@ -295,6 +295,7 @@ BEGIN
   InitArray(adr, "41007573657233322E646C6C000080004578697450726F6365737300A4014C6F");
   InitArray(adr, "61644C6962726172794100001F0147657450726F63416464726573730000B300");
   InitArray(adr, "467265654C696272617279006B65726E656C33322E646C6C0000000000000000");
+
   sys.PUT(sys.ADR(rdata[0]), acodesize + 0BEH);
   sys.PUT(sys.ADR(rdata[4]), acodesize + 08EH);
   sys.PUT(sys.ADR(rdata[8]), acodesize + 09CH);
@@ -311,6 +312,7 @@ BEGIN
   sys.PUT(sys.ADR(rdata[96]), acodesize + 09CH);
   sys.PUT(sys.ADR(rdata[100]), acodesize + 0ACH);
   sys.PUT(sys.ADR(rdata[108]), acodesize + 074H);
+
   adr := sys.ADR(Header.msdos);
   InitArray(adr, "4D5A90000300000004000000FFFF0000B8000000000000004000000000000000");
   InitArray(adr, "00000000000000000000000000000000000000000000000000000000B0000000");
@@ -617,8 +619,6 @@ VAR n: INTEGER;
 BEGIN
   New;
   CASE jamp OF
-  |JECXZ:
-    n := 2
   |JMP, CALL:
     n := 5
   |JE, JLE, JGE, JG, JL:
@@ -669,7 +669,22 @@ BEGIN
   END
 END IntByte;
 
-PROCEDURE Call*(proc: INTEGER; func, float: BOOLEAN; ccall, bases, level: INTEGER);
+PROCEDURE AfterRet(func, float, cdecl: BOOLEAN; parsize: INTEGER);
+BEGIN
+  IF cdecl THEN
+    OutCode("81C4");
+    OutInt(parsize)
+  END;
+  IF func THEN
+    IF ~float THEN
+      PushEAX
+    ELSE
+      OutCode("83EC08DD1C24")
+    END
+  END
+END AfterRet;
+
+PROCEDURE Call*(proc: INTEGER; func, float, cdecl: BOOLEAN; ccall, bases, level, parsize: INTEGER);
 VAR i: INTEGER;
 BEGIN
   IF ccall # 0 THEN
@@ -681,13 +696,7 @@ BEGIN
     END
   END;
   jmp(CALL, proc);
-  IF func THEN
-    IF ~float THEN
-      PushEAX
-    ELSE
-      OutCode("83EC08DD1C24")
-    END
-  END
+  AfterRet(func, float, cdecl, parsize)
 END Call;
 
 PROCEDURE CallRTL(Proc: INTEGER);
@@ -778,6 +787,12 @@ PROCEDURE ProcBeg*(Number, Local: INTEGER; Module: BOOLEAN);
 VAR i: INTEGER;
 BEGIN
   IF Module THEN
+    OutCode("EB0C");
+    Label(Number + 3);
+    PopEDX;
+    PushInt(Number + 2);
+    PushEDX;
+    jmp(JMP, HALT);
     Label(Number + 1)
   ELSE
     Label(Number);
@@ -787,7 +802,7 @@ BEGIN
     IntByte("83EC", "81EC", Local);
     OutCode("8BD733C08BFCB9");
     OutInt(Local DIV 4);
-    OutCode("FCF3AB8BFA")
+    OutCode("9CFCF3AB8BFA9D")
   ELSE
     FOR i := 4 TO Local BY 4 DO
       OutCode("6A00")
@@ -924,23 +939,22 @@ BEGIN
   OutCode("DBE3DD0424D9E0DD1C24")
 END fneg;
 
-PROCEDURE OnError(n: INTEGER); (*17 bytes!!!*)
+PROCEDURE OnError(n: INTEGER); (*12 bytes!!!*)
 BEGIN
   OutByte(68H);
   OutInt(UTILS.Line);
-  PushInt(UTILS.Unit + 2);
   OutByte(6AH);
   OutByte(n);
-  jmp(JMP, HALT)
+  jmp(JMP, UTILS.Unit + 3);
 END OnError;
 
 PROCEDURE idivmod*(opmod: BOOLEAN);
 BEGIN
   PopECX;
   IF opmod THEN
-    OutCode("58E330538BD833D9C1FB1F8BD0C1FA1F83F9FF750C3D0000008075055B6A00EB23F7F983FB00740783FA00740203D15B52EB11")
+    OutCode("58E330538BD833D9C1FB1F8BD0C1FA1F83F9FF750C3D0000008075055B6A00EB1EF7F983FB00740783FA00740203D15B52EB0C")
   ELSE
-    OutCode("58E32E538BD833D9C1FB1F8BD0C1FA1F83F9FF750B3D0000008075045B50EB22F7F983FB00740683FA007401485B50EB11")
+    OutCode("58E32E538BD833D9C1FB1F8BD0C1FA1F83F9FF750B3D0000008075045B50EB1DF7F983FB00740683FA007401485B50EB0C")
   END;
   OnError(8)
 END idivmod;
@@ -1012,19 +1026,13 @@ BEGIN
   PushECX
 END CmpInt;
 
-PROCEDURE CallVar*(func, float: BOOLEAN);
+PROCEDURE CallVar*(func, float, cdecl: BOOLEAN; parsize: INTEGER);
 BEGIN
   PopEDX;
-  OutCode("833A007511");
+  OutCode("833A00750C");
   OnError(2);
   OutCode("FF12");
-  IF func THEN
-    IF ~float THEN
-      PushEAX
-    ELSE
-      OutCode("83EC08DD1C24")
-    END
-  END
+  AfterRet(func, float, cdecl, parsize)
 END CallVar;
 
 PROCEDURE LocalAdr*(offset, bases: INTEGER);
@@ -1062,7 +1070,7 @@ BEGIN
   IF Check THEN
     PushEAX
   ELSE
-    OutCode("83F8007511");
+    OutCode("83F800750C");
     OnError(3)
   END
 END Guard;
@@ -1229,7 +1237,7 @@ BEGIN
     OutCode("8B542408DBE3DD0424D91A83C40C")
   |TRECORD:
     CallRTL(_saverec);
-    OutCode("83F8007511");
+    OutCode("83F800750C");
     OnError(4)
   |TARRAY:
     CallRTL(_savearr)
@@ -1263,7 +1271,7 @@ BEGIN
   ELSE
     CallRTL(_arrayidx1)
   END;
-  OutCode("833C24007511");
+  OutCode("833C2400750C");
   OnError(5)
 END OpenIdx;
 
@@ -1271,7 +1279,7 @@ PROCEDURE FixIdx*(len, size: INTEGER);
 BEGIN
   PopEDX;
   IntByte("5983FA", "5981FA", len);
-  OutCode("7211");
+  OutCode("720C");
   OnError(5);
   IF size > 1 THEN
     IntByte("6BD2", "69D2", size)
@@ -1280,11 +1288,12 @@ BEGIN
   PushEDX
 END FixIdx;
 
-PROCEDURE Idx*(n: INTEGER);
+PROCEDURE Idx*(n: INTEGER; size1: BOOLEAN);
 BEGIN
   PopEDX;
-  IF n > 1 THEN
-    IntByte("6BD2", "69D2", n)
+  IF ~size1 THEN
+    OutByte(0BAH);
+    OutInt(n)
   END;
   PopECX;
   OutCode("03D1");
@@ -1293,13 +1302,14 @@ END Idx;
 
 PROCEDURE DupLoadCheck*;
 BEGIN
-  OutCode("8B14248B0A5183F9007511");
+  PopEDX;
+  OutCode("528B125283FA00750C");
   OnError(6)
 END DupLoadCheck;
 
 PROCEDURE CheckNIL*;
 BEGIN
-  OutCode("833C24007511");
+  OutCode("833C2400750C");
   OnError(6)
 END CheckNIL;
 
@@ -1317,10 +1327,12 @@ END ExtArray;
 
 PROCEDURE ADR*(dim: INTEGER);
 BEGIN
-  PopEDX;
-  OutCode("83C4");
-  OutByte(dim * 4);
-  PushEDX
+  IF dim > 0 THEN
+    PopEDX;
+    OutCode("83C4");
+    OutByte(dim * 4);
+    PushEDX
+  END
 END ADR;
 
 PROCEDURE Len*(dim: INTEGER);
@@ -1581,7 +1593,7 @@ BEGIN
   current := start;
   GlobalAdr(0);
   PushConst(gsize DIV 4);
-  OutCode("8BC7595F5033C0FCF3AB5F");
+  OutCode("8BC7595F5033C09CFCF3AB9D5F");
   PushInt(RTABLE);
   PushInt(SELFNAME);
   CallRTL(_init);
@@ -1594,9 +1606,7 @@ BEGIN
   CallRTL(_assrt);
   OutCode("EB0B");
   Label(HALT);
-  PopEDX;
-  OutCode("6A006A00");
-  PushEDX;
+  OutCode("5A6A006A0052");
   CallRTL(_assrt);
   OutCode("6A00");
   CallAPI(ExitProcess);

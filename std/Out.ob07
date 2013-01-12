@@ -13,7 +13,7 @@ TYPE
 VAR
 
   hConsoleOutput: INTEGER;
-  WriteConsole: PROCEDURE (hConsoleOutput, lpBuffer, nNumberOfCharsToWrite,
+  WriteFile: PROCEDURE (hConsoleOutput, lpBuffer, nNumberOfCharsToWrite,
     lpNumberOfCharsWritten, lpReserved: INTEGER): INTEGER;
   GetStdHandle: PROCEDURE (nStdHandle: INTEGER): INTEGER;
   Realp: PROCEDURE (x: LONGREAL; width: INTEGER);
@@ -32,13 +32,13 @@ END strlen;
 PROCEDURE String*(s: ARRAY OF CHAR);
 VAR count, res: INTEGER;
 BEGIN
-  res := WriteConsole(hConsoleOutput, sys.ADR(s[0]), strlen(s), sys.ADR(count), 0)
+  res := WriteFile(hConsoleOutput, sys.ADR(s[0]), strlen(s), sys.ADR(count), 0)
 END String;
 
 PROCEDURE Char*(x: CHAR);
 VAR count, res: INTEGER;
 BEGIN
-  res := WriteConsole(hConsoleOutput, sys.ADR(x), 1, sys.ADR(count), 0)
+  res := WriteFile(hConsoleOutput, sys.ADR(x), 1, sys.ADR(count), 0)
 END Char;
 
 PROCEDURE WriteInt(x, n: INTEGER);
@@ -127,6 +127,7 @@ END OutInf;
 
 PROCEDURE Ln*;
 BEGIN
+  Char(0DX);
   Char(0AX)
 END Ln;
 
@@ -281,9 +282,9 @@ BEGIN
   Realp := Real;
   kernel32 := sys.LOADLIB(sys.ADR("kernel32.dll"));
   GetProc("GetStdHandle", kernel32, sys.ADR(GetStdHandle));
-  GetProc("WriteConsoleA", kernel32, sys.ADR(WriteConsole));
+  GetProc("WriteFile", kernel32, sys.ADR(WriteFile));
 END Init;
 
 BEGIN
-  Init;
+  Init
 END Out.

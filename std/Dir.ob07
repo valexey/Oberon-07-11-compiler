@@ -33,7 +33,6 @@ BEGIN
 END GetProc;
 
 PROCEDURE Remove*(DirName: ARRAY OF CHAR): BOOLEAN;
-BEGIN
   RETURN RemoveDirectory(sys.ADR(DirName[0])) # 0
 END Remove;
 
@@ -45,7 +44,6 @@ BEGIN
 END Exists;
 
 PROCEDURE Create*(DirName: ARRAY OF CHAR): BOOLEAN;
-BEGIN
   RETURN CreateDirectory(sys.ADR(DirName[0]), NIL) # 0
 END Create;
 

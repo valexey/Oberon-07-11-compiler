@@ -29,7 +29,7 @@ CONST
   stEXCL = 16; stCOPY = 17; stNEW = 18; stASSERT = 19; stPACK = 20; stUNPK = 21; stDISPOSE = 22;
 
   sysADR = 101; sysSIZE = 102; sysBIT = 103; sysGET = 104; sysPUT = 105; sysCODE = 106;
-  sysLOADLIB = 107; sysFREELIB = 108; sysGETPROC = 109; sysHALT = 110;
+  sysLOADLIB = 107; sysFREELIB = 108; sysGETPROC = 109; sysHALT = 110; sysTYPEID = 111;
 
 TYPE
 
@@ -102,10 +102,24 @@ END BaseOf;
 
 PROCEDURE Designator(VAR e: DECL.EXPRESSION);
 VAR id: DECL.IDENT; name: SCAN.NODE; e1: DECL.EXPRESSION;
-    line, col, i, n, bases: INTEGER;
+    line, col, i, n, bases, glob, loc: INTEGER;
     imp, break, flag, guard: BOOLEAN; f: DECL.FIELD;
     T, BaseT: DECL.pTYPE; s: DECL.STRCONST;
+
+  PROCEDURE LoadVar;
+  BEGIN
+    IF glob # -1 THEN
+      X86.GlobalAdr(glob);
+      glob := -1
+    ELSIF loc # -1 THEN
+      X86.LocalAdr(loc, bases);
+      loc := -1
+    END
+  END LoadVar;
+
 BEGIN
+  glob := -1;
+  loc := -1;
   Coord(line, col);
   Check(lxIDENT);
   name := SCAN.id;
@@ -123,25 +137,23 @@ BEGIN
   Assert(id # NIL, line, col, 42);
   e.vparam := FALSE;
   e.deref := FALSE;
+  e.id := id;
   Next;
   CASE id.iType OF
   |IDVAR:
-    e.id := id;
     e.eType := eVAR;
     e.T := id.T;
     IF id.VarKind = 0 THEN
       e.Read := imp
     ELSE
-      e.eType := eVAR;
-      e.T := id.T;
       e.Read := (id.VarKind = DECL.param) & (id.T.tType IN {TRECORD, TARRAY});
       e.vparam := id.VarKind = DECL.paramvar
     END;
     bases := DECL.unit.Level - id.Level;
     IF id.Level = 3 THEN
-      X86.GlobalAdr(id.Offset)
+      glob := id.Offset
     ELSIF (id.VarKind = 0) OR (id.VarKind = DECL.param) & ~(id.T.tType IN {TARRAY, TRECORD}) THEN
-      X86.LocalAdr(id.Offset, bases)
+      loc := id.Offset
     ELSIF (id.VarKind = DECL.paramvar) OR (id.T.tType IN {TARRAY, TRECORD}) THEN
       IF DECL.Dim(e.T) > 0 THEN
         n := DECL.Dim(e.T);
@@ -171,17 +183,14 @@ BEGIN
     END
   |IDPROC:
     e.eType := ePROC;
-    e.id := id;
     e.T := sttypes[TVOID]
   |IDTYPE:
     Assert(FALSE, line, col, 101)
   |IDSTPROC:
     e.eType := eSTPROC;
-    e.id := id;
     e.T := sttypes[TVOID]
   |IDSYSPROC:
     e.eType := eSYSPROC;
-    e.id := id;
     e.T := sttypes[TVOID]
   END;
   break := FALSE;
@@ -194,6 +203,7 @@ BEGIN
       flag := FALSE;
       Assert2(e.T.tType IN {TPOINTER, TRECORD}, 105);
       IF e.T.tType = TPOINTER THEN
+        LoadVar;
         e.T := e.T.Base;
         X86.Load(TINTEGER);
         IF ~guard THEN
@@ -213,13 +223,20 @@ BEGIN
       IF f.Unit # DECL.unit THEN
         Assert(f.Export, line, col, 99)
       END;
-      X86.Field(f.Offset);
+      IF glob # -1 THEN
+        glob := glob + f.Offset
+      ELSIF loc # -1 THEN
+        loc := loc + f.Offset
+      ELSE
+        X86.Field(f.Offset)
+      END;
       e.T := f.T;
       e.vparam := FALSE;
       guard := FALSE;
       Next
     |lxLSquare:
       flag := FALSE;
+      LoadVar;
       REPEAT
         Assert2(e.T.tType = TARRAY, 102);
         Next;
@@ -234,7 +251,7 @@ BEGIN
         ELSE
           IF e1.eType = eCONST THEN
             Assert((FLOOR(e1.Value) >= 0) & (FLOOR(e1.Value) < e.T.Len), line, col, 159);
-            X86.Idx(e.T.Base.Size)
+            X86.Idx(e.T.Base.Size * FLOOR(e1.Value), e.T.Base.Size = 1)
           ELSE
             X86.FixIdx(e.T.Len, e.T.Base.Size)
           END
@@ -247,6 +264,7 @@ BEGIN
       Next
     |lxCaret:
       flag := FALSE;
+      LoadVar;
       Assert2(e.T.tType = TPOINTER, 104);
       X86.Load(TINTEGER);
       IF ~guard THEN
@@ -259,6 +277,7 @@ BEGIN
       Next
     |lxLRound:
       flag := FALSE;
+      LoadVar;
       IF e.T.tType IN {TRECORD, TPOINTER} THEN
         IF e.T.tType = TRECORD THEN
           Assert2(e.vparam, 108)
@@ -288,11 +307,9 @@ BEGIN
       ELSE
         break := TRUE
       END
-    END;
-    IF flag THEN
-      break := TRUE
     END
-  UNTIL break
+  UNTIL break OR flag;
+  LoadVar
 END Designator;
 
 PROCEDURE Set(VAR e: DECL.EXPRESSION);
@@ -349,7 +366,6 @@ BEGIN
 END Set;
 
 PROCEDURE IsString(a: DECL.EXPRESSION): BOOLEAN;
-BEGIN
   RETURN (a.T.tType = TSTRING) OR (a.T.tType = TARRAY) & (a.T.Base.tType = TCHAR)
 END IsString;
 
@@ -498,25 +514,25 @@ BEGIN
     Load(e1);
     e.T := sttypes[TREAL]
   |sysADR:
-    IF (SCAN.tLex = lxSTRING) OR (SCAN.tLex = lxCHX) THEN
-      pFactor(e1)
-    ELSIF SCAN.tLex = lxIDENT THEN
-      Designator(e1)
+    Assert((SCAN.tLex = lxIDENT) OR (SCAN.tLex = lxSTRING) OR (SCAN.tLex = lxCHX), line, col, 43);
+    IF SCAN.tLex = lxIDENT THEN
+      Designator(e1);
+      Assert((e1.eType = eVAR) OR (e1.eType = ePROC) OR (e1.T = sttypes[TSTRING]), line, col, 43);
+      IF e1.eType = ePROC THEN
+        X86.PushInt(e1.id.Number)
+      END
     ELSE
-      Assert(FALSE, line, col, 43)
+      pFactor(e1)
     END;
-    IF (e1.eType = eCONST) & (e1.T = sttypes[TSTRING]) THEN
+    IF e1.T = sttypes[TSTRING] THEN
       str := DECL.GetString(e1.Value);
       IF str.Len = 1 THEN
         X86.Drop;
         X86.PushInt(str.Number)
       END
     END;
-    Assert((e1.eType = eVAR) OR (e1.eType = eCONST) & (e1.T = sttypes[TSTRING]), line, col, 43);
     e.T := sttypes[TINTEGER];
-    IF DECL.Dim(e1.T) > 0 THEN
-      X86.ADR(DECL.Dim(e1.T))
-    END
+    X86.ADR(DECL.Dim(e1.T))
   |sysBIT:
     pExpr(e1);
     Assert(e1.T.tType = TINTEGER, line, col, 52);
@@ -529,15 +545,24 @@ BEGIN
     Load(e1);
     X86.StFunc(X86.sysBIT);
     e.T := sttypes[TBOOLEAN]
-  |sysSIZE:
+  |sysSIZE, sysTYPEID:
     DECL.SetSizeFunc;
     Check(lxIDENT);
     T := DECL.IdType(line, col);
     Assert(T # NIL, line, col, 42);
     e.eType := eCONST;
-    e.Value := LONG(FLT(T.Size));
     e.T := sttypes[TINTEGER];
-    X86.PushConst(T.Size)
+    IF func = sysTYPEID THEN
+      Assert(T.tType IN {TRECORD, TPOINTER}, line, col, 47);
+      IF T.tType = TPOINTER THEN
+        T := T.Base
+      END;
+      e.Value := LONG(FLT(T.Number));
+      X86.PushConst(T.Number)
+    ELSE
+      e.Value := LONG(FLT(T.Size));
+      X86.PushConst(T.Size)
+    END;
   |sysFREELIB:
     pExpr(e1);
     Assert(e1.T.tType = TINTEGER, line, col, 52);
@@ -591,7 +616,7 @@ VAR fp, ft: UTILS.ITEM; Res: BOOLEAN;
 
 BEGIN
   IF (T1.tType = TPROC) & (T2.tType = TPROC) THEN
-    Res := (T1.Fields.Count = T2.Fields.Count) & ProcTypeComp(T1.Base, T2.Base);
+    Res := (T1.Call = T2.Call) & (T1.Fields.Count = T2.Fields.Count) & ProcTypeComp(T1.Base, T2.Base);
     fp := T1.Fields.First;
     ft := T2.Fields.First;
     WHILE Res & (fp # NIL) DO
@@ -776,7 +801,8 @@ BEGIN
         ELSE
           ccall := 2
         END;
-        X86.Call(e.id.Number, TRUE, e.T.tType IN {TREAL, TLONGREAL}, ccall, e.id.Level - 3, DECL.curBlock.Level - 3)
+        X86.Call(e.id.Number, TRUE, e.T.tType IN {TREAL, TLONGREAL}, e.id.T.Call = DECL.cdecl, ccall, e.id.Level - 3,
+          DECL.curBlock.Level - 3, e.id.ParamSize)
       ELSE
         X86.PushInt(e.id.Number)
       END
@@ -787,8 +813,8 @@ BEGIN
       Call(e.T.Fields.First);
       X86.EndCall;
       e.eType := eEXP;
+      X86.CallVar(TRUE, e.T.Base.tType IN {TREAL, TLONGREAL}, e.T.Call = DECL.cdecl, e.T.Len);
       e.T := e.T.Base;
-      X86.CallVar(TRUE, e.T.tType IN {TREAL, TLONGREAL})
     ELSIF e.eType IN {eSTPROC, eSYSPROC} THEN
       StFunc(e, e.id.StProc)
     END
@@ -877,7 +903,6 @@ BEGIN
 END Factor;
 
 PROCEDURE IsChr(a: DECL.EXPRESSION): BOOLEAN;
-BEGIN
   RETURN (a.T.tType = TSTRING) & (LenString(a.Value) = 1) OR (a.T.tType = TCHAR)
 END IsChr;
 
@@ -1011,8 +1036,7 @@ BEGIN
     END;
     e.vparam := FALSE
   END;
-  WHILE (SCAN.tLex = lxPlus) OR (SCAN.tLex = lxMinus) OR
-     (SCAN.tLex = lxOR) DO
+  WHILE (SCAN.tLex = lxPlus) OR (SCAN.tLex = lxMinus) OR (SCAN.tLex = lxOR) DO
     Load(e);
     Coord(line, col);
     Op := SCAN.tLex;
@@ -1275,7 +1299,7 @@ BEGIN
     Next;
     LabelVal(b, int)
   END;
-  Assert(a <= b, line, col, 158);
+  Assert(a <= b, line, col, 54);
   Assert(CheckLabel(a, b, Labels), line, col, 100);
   NEW(label);
   DECL.MemErr(label = NIL);
@@ -1606,7 +1630,7 @@ BEGIN
     ELSE
       ccall := 2
     END;
-    X86.Call(e1.id.Number, FALSE, FALSE, ccall, e1.id.Level - 3, DECL.curBlock.Level - 3)
+    X86.Call(e1.id.Number, FALSE, FALSE, e1.id.T.Call = DECL.cdecl, ccall, e1.id.Level - 3, DECL.curBlock.Level - 3, e1.id.ParamSize)
   ELSIF e1.eType IN {eSTPROC, eSYSPROC} THEN
     StProc(e1.id.StProc)
   ELSIF (e1.eType = eVAR) & (e1.T.tType = TPROC) THEN
@@ -1616,7 +1640,7 @@ BEGIN
       X86.PushCall(begcall);
       Call(e1.T.Fields.First);
       X86.EndCall;
-      X86.CallVar(FALSE, FALSE)
+      X86.CallVar(FALSE, FALSE, e1.T.Call = DECL.cdecl, e1.T.Len)
     ELSIF SCAN.tLex = lxAssign THEN
       Assert(~e1.Read, line, col, 115);
       Next;
@@ -1631,7 +1655,7 @@ BEGIN
     ELSE
       Assert2(e1.T.Fields.Count = 0, 155);
       Assert(e1.T.Base.tType = TVOID, line, col, 132);
-      X86.CallVar(FALSE, FALSE)
+      X86.CallVar(FALSE, FALSE, e1.T.Call = DECL.cdecl, e1.T.Len)
     END
   END
 END IdentOper;

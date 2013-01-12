@@ -94,12 +94,10 @@ BEGIN
 END Exists;
 
 PROCEDURE Delete*(FName: ARRAY OF CHAR): BOOLEAN;
-BEGIN
   RETURN DeleteFile(sys.ADR(FName[0])) # 0
 END Delete;
 
 PROCEDURE Create*(FName: ARRAY OF CHAR): INTEGER;
-BEGIN
   RETURN CreateFile(sys.ADR(FName[0]), 0C0000000H, 0, NIL, 2, 80H, 0)
 END Create;
 
@@ -116,7 +114,6 @@ BEGIN
 END Open;
 
 PROCEDURE Seek*(F, Offset, Origin: INTEGER): INTEGER;
-BEGIN
   RETURN SetFilePointer(F, Offset, 0, Origin)
 END Seek;
 

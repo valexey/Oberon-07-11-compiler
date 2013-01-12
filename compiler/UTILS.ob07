@@ -175,7 +175,6 @@ BEGIN
 END ParamStr;
 
 PROCEDURE CreateF*(FName: ARRAY OF CHAR): INTEGER;
-BEGIN
   RETURN CreateFile(sys.ADR(FName[0]), 0C0000000H, 0, 0, 2, 80H, 0)
 END CreateF;
 
@@ -187,7 +186,6 @@ END CloseF;
 
 PROCEDURE OpenF*(FName: ARRAY OF CHAR; Mode: INTEGER): INTEGER;
 VAR ofstr: OFSTRUCT;
-BEGIN
   RETURN OpenFile(sys.ADR(FName[0]), ofstr, Mode)
 END OpenF;
 
@@ -214,7 +212,6 @@ BEGIN
 END Write;
 
 PROCEDURE Char*(F: INTEGER; VAR x: CHAR): BOOLEAN;
-BEGIN
   RETURN Read(F, sys.ADR(x), sys.SIZE(CHAR)) = sys.SIZE(CHAR)
 END Char;
 
@@ -276,7 +273,6 @@ BEGIN
 END min;
 
 PROCEDURE Align*(n: INTEGER): INTEGER;
-BEGIN
   RETURN (4 - n MOD 4) MOD 4
 END Align;
 
@@ -434,7 +430,6 @@ BEGIN
 END Split;
 
 PROCEDURE PChar*(s: ARRAY OF CHAR): INTEGER;
-BEGIN
   RETURN sys.ADR(s[0])
 END PChar;
 
@@ -455,7 +450,6 @@ BEGIN
   user32 := sys.LOADLIB(sys.ADR("user32.dll"));
   GetProc("CharToOemA", user32, sys.ADR(CharToOem));
   hConsoleOutput := GetStdHandle(-11);
-  hConsoleInput := GetStdHandle(-10);
   ParamParse
 END Init;
 

@@ -1,0 +1,100 @@
+(*
+  Программа имитирует работу с массивами,
+  размер которых не известен на этапе компиляции и
+  демонстрирует выделение памяти для динамической записи
+  без использования процедуры NEW.
+
+  Используется функция WinApi GlobalAlloc,
+  скрытые параметры процедур и компиляторная функция SYSTEM.TYPEID
+  *)
+
+MODULE DemoAlloc;
+
+IMPORT RTL, In, Out, sys := SYSTEM;
+
+TYPE
+
+  Rec = RECORD x, y: INTEGER END;
+  Ptr = POINTER TO Rec;
+
+VAR
+
+  GlobalAlloc: PROCEDURE (uFlags, dwBytes: INTEGER): INTEGER;
+  CopyStr2: PROCEDURE (Source: ARRAY OF CHAR; Dest, Len: INTEGER);
+  Write2: PROCEDURE (Adr, Len: INTEGER);
+
+PROCEDURE init;
+VAR lib: INTEGER;
+
+  PROCEDURE GetProc(name: ARRAY OF CHAR; hMOD, adr: INTEGER);
+  BEGIN
+    sys.PUT(adr, sys.GETPROC(hMOD, sys.ADR(name[0])))
+  END GetProc;
+
+BEGIN
+  lib := sys.LOADLIB(sys.ADR("kernel32.dll"));
+  GetProc("GlobalAlloc", lib, sys.ADR(GlobalAlloc));
+  ASSERT(GlobalAlloc # NIL);
+END init;
+
+PROCEDURE NewRecord(Tag, Size: INTEGER): INTEGER;
+VAR Adr: INTEGER;
+BEGIN
+  Adr := GlobalAlloc(64, Size + 4); (* выделяем дополнительно 4 байта для тэга *)
+  IF Adr # 0 THEN
+    sys.PUT(Adr, Tag); (* в начало выделенной области записываем тэг *)
+    INC(Adr, 4) (* смещаем адрес на 4 байта, чтобы тэг находился по отрицательному смещению *)
+  END
+  RETURN Adr
+END NewRecord;
+
+PROCEDURE NewArray(VAR Adr: INTEGER; Size: INTEGER);
+BEGIN
+  Adr := GlobalAlloc(64, Size);
+END NewArray;
+
+PROCEDURE Write1(Str: ARRAY OF CHAR (* LengthStr: INTEGER - скрытый параметр *));
+VAR i, Length: INTEGER;
+BEGIN
+  i := 0;
+  Length := LEN(Str); (* фактически Length := LengthStr; *)
+  WHILE (i < Length) & (Str[i] # 0X) DO
+    Out.Char(Str[i]);
+    Out.Ln;
+    INC(i)
+  END
+END Write1;
+
+PROCEDURE CopyStr1(Source: ARRAY OF CHAR; (* LengthSrc: INTEGER - скрытый параметр *)
+                    VAR Dest: ARRAY OF CHAR (* LengthDest: INTEGER - скрытый параметр *));
+BEGIN
+  COPY(Source, Dest)
+END CopyStr1;
+
+PROCEDURE Main;
+VAR adr, size: INTEGER; p: Ptr;
+BEGIN
+  sys.PUT(sys.ADR(Write2), sys.ADR(Write1)); (* Write2 := Write1 *)
+  sys.PUT(sys.ADR(CopyStr2), sys.ADR(CopyStr1)); (* CopyStr2 := CopyStr1 *)
+  size := 10;
+  NewArray(adr, size); (* выделение памяти для "массива" из 10 символов *)
+  ASSERT(adr # 0);
+  CopyStr2("Hello, world!", adr, size); (* на самом деле, вызывается CopyStr1 *)
+  Write2(adr, size); (* на самом деле, вызывается Write1 *)
+  sys.PUT(sys.ADR(p), NewRecord(sys.TYPEID(Ptr), sys.SIZE(Rec))); (* аналогично NEW(p) *)
+  IF p # NIL THEN
+    Out.Ln;
+    p.x := 1;
+    p.y := 2;
+    Out.Int(p.x, 0); Out.Ln;
+    Out.Int(p.y, 0); Out.Ln;
+  END;
+END Main;
+
+BEGIN
+  In.Open;
+  Out.Open;
+  init;
+  Main;
+  In.Ln;
+END DemoAlloc.

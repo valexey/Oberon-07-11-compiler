@@ -189,22 +189,18 @@ BEGIN
 END Close;
 
 PROCEDURE Space(ch: CHAR): BOOLEAN;
-BEGIN
   RETURN (ch <= 20X) & (ch > 0X)
 END Space;
 
 PROCEDURE Letter(ch: CHAR): BOOLEAN;
-BEGIN
   RETURN (ch >= "A") & (ch <= "Z") OR (ch >= "a") & (ch <= "z") OR (ch = "_")
 END Letter;
 
 PROCEDURE Digit*(ch: CHAR): BOOLEAN;
-BEGIN
   RETURN (ch >= "0") & (ch <= "9")
 END Digit;
 
 PROCEDURE HexDigit*(ch: CHAR): BOOLEAN;
-BEGIN
   RETURN (ch >= "A") & (ch <= "F") OR (ch >= "0") & (ch <= "9")
 END HexDigit;
 
@@ -644,43 +640,43 @@ PROCEDURE Init;
 BEGIN
   NEW(Root);
   MemErr(Root = NIL);
-  Root.Name := "N";
+  Root.Name := "i";
   Root.tLex := lxIDENT;
   Root.Left := NIL;
   Root.Right := NIL;
-  AddNodeKey("ARRAY", lxARRAY);
-  AddNodeKey("BEGIN", lxBEGIN);
-  AddNodeKey("BY", lxBY);
-  AddNodeKey("CASE", lxCASE);
-  AddNodeKey("CONST", lxCONST);
-  AddNodeKey("DIV", lxDIV);
-  AddNodeKey("DO", lxDO);
-  AddNodeKey("ELSE", lxELSE);
-  AddNodeKey("ELSIF", lxELSIF);
-  AddNodeKey("END", lxEND);
-  AddNodeKey("FALSE", lxFALSE);
-  AddNodeKey("FOR", lxFOR);
-  AddNodeKey("IF", lxIF);
-  AddNodeKey("IMPORT", lxIMPORT);
-  AddNodeKey("IN", lxIN);
-  AddNodeKey("IS", lxIS);
   AddNodeKey("MOD", lxMOD);
-  AddNodeKey("MODULE", lxMODULE);
-  AddNodeKey("NIL", lxNIL);
-  AddNodeKey("OF", lxOF);
-  AddNodeKey("OR", lxOR);
-  AddNodeKey("POINTER", lxPOINTER);
-  AddNodeKey("PROCEDURE", lxPROCEDURE);
-  AddNodeKey("RECORD", lxRECORD);
-  AddNodeKey("REPEAT", lxREPEAT);
+  AddNodeKey("ELSE", lxELSE);
   AddNodeKey("RETURN", lxRETURN);
-  AddNodeKey("THEN", lxTHEN);
-  AddNodeKey("TO", lxTO);
-  AddNodeKey("TRUE", lxTRUE);
+  AddNodeKey("CASE", lxCASE);
+  AddNodeKey("IF", lxIF);
+  AddNodeKey("POINTER", lxPOINTER);
   AddNodeKey("TYPE", lxTYPE);
-  AddNodeKey("UNTIL", lxUNTIL);
+  AddNodeKey("BEGIN", lxBEGIN);
+  AddNodeKey("DIV", lxDIV);
+  AddNodeKey("FALSE", lxFALSE);
+  AddNodeKey("IN", lxIN);
+  AddNodeKey("NIL", lxNIL);
+  AddNodeKey("RECORD", lxRECORD);
+  AddNodeKey("TO", lxTO);
   AddNodeKey("VAR", lxVAR);
-  AddNodeKey("WHILE", lxWHILE)
+  AddNodeKey("ARRAY", lxARRAY);
+  AddNodeKey("DO", lxDO);
+  AddNodeKey("END", lxEND);
+  AddNodeKey("IS", lxIS);
+  AddNodeKey("OF", lxOF);
+  AddNodeKey("PROCEDURE", lxPROCEDURE);
+  AddNodeKey("THEN", lxTHEN);
+  AddNodeKey("WHILE", lxWHILE);
+  AddNodeKey("BY", lxBY);
+  AddNodeKey("CONST", lxCONST);
+  AddNodeKey("ELSIF", lxELSIF);
+  AddNodeKey("IMPORT", lxIMPORT);
+  AddNodeKey("MODULE", lxMODULE);
+  AddNodeKey("OR", lxOR);
+  AddNodeKey("REPEAT", lxREPEAT);
+  AddNodeKey("TRUE", lxTRUE);
+  AddNodeKey("UNTIL", lxUNTIL);
+  AddNodeKey("FOR", lxFOR)
 END Init;
 
 BEGIN

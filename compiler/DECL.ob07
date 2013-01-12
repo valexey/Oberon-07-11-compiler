@@ -27,12 +27,14 @@ CONST
   stEXCL = 16; stCOPY = 17; stNEW = 18; stASSERT = 19; stPACK = 20; stUNPK = 21; stDISPOSE = 22;
 
   sysADR = 101; sysSIZE = 102; sysBIT = 103; sysGET = 104; sysPUT = 105; sysCODE = 106;
-  sysLOADLIB = 107; sysFREELIB = 108; sysGETPROC = 109; sysHALT = 110;
+  sysLOADLIB = 107; sysFREELIB = 108; sysGETPROC = 109; sysHALT = 110; sysTYPEID = 111;
 
   TINTEGER = 1; TREAL = 2; TLONGREAL = 3; TCHAR = 4; TSET = 5; TBOOLEAN = 6; TVOID = 7; TNIL = 8;
   TCARD16 = 9; TSTRING = 10; TARRAY = 11; TRECORD = 12; TPOINTER = 13; TPROC = 14;
 
   paramvar* = 1; param* = 2;
+
+  stdcall* = 0; cdecl* = 1;
 
   eVAR = 1; eCONST = 2; eEXP = 3; ePROC = 4; eSTPROC = 5; eSYSPROC = 6;
 
@@ -120,7 +122,8 @@ TYPE
     Base*: pTYPE;
     Fields*: UTILS.LIST;
     Number*: INTEGER;
-    Align: INTEGER
+    Align: INTEGER;
+    Call*: INTEGER
   END;
 
   rPTRBASE = RECORD (UTILS.rITEM)
@@ -253,8 +256,11 @@ BEGIN
   | 40: s := "ожидалoсь 'TO'"
   | 41: s := "ожидалoсь 'OF'"
   | 42: s := "неопределенный идентификатор"
-  | 43: s := "требуется переменная или строковая константа"
+  | 43: s := "требуется переменная, процедура или строковая константа"
+  | 44: s := "ожидалoсь 'cdecl' или 'stdcall'"
+  | 45: s := "флаг вызова недопускается для локальных процедур"
   | 46: s := "деление на нуль"
+  | 47: s := "требуется идентификатор типа-записи или типа-указателя"
   | 48: s := "целочисленное деление на нуль"
   | 49: s := "значение левого операнда вне диапазона 0..31"
   | 51: s := "ожидалась '}'"
@@ -280,12 +286,11 @@ BEGIN
   | 80: s := "ожидался идентификатор типа-записи"
   | 81: s := "базовый тип типа-указателя должен быть записью"
   | 82: s := "тип результата процедуры не может быть записью или массивом"
-  | 83: s := "размер типа-массива слишком велик"
+  | 83: s := "размер типа слишком велик"
   | 84: s := "ожидался идентификатор или 'VAR'"
   | 85: s := "ожидалась ',' или ':'"
   | 86: s := "ожидалось 'END' или ';'"
   | 87: s := "идентификатор не совпадает с именем процедуры"
-  | 88: s := "размер типа-записи слишком велик"
   | 89: s := "экспорт локального идентификатора недопустим"
   | 90: s := "экспорт переменных типа ARRAY или RECORD недопустим"
   | 91: s := "экспорт поля записи недопустим вне секции объявления типов"
@@ -334,7 +339,6 @@ BEGIN
   |155: s := "ожидалось '(' или ':='"
   |156: s := "требуется выражение типа INTEGER или CHAR"
   |157: s := "ожидалось ':'"
-  |158: s := "левая граница диапазона больше правой"
   |159: s := "нарушение границ массива"
   |160: s := "ожидался идентификатор константы"
   |161: s := "требуется константа типа INTEGER"
@@ -431,6 +435,7 @@ BEGIN
     ident.Number := X86.NewLabel();
     i := X86.NewLabel();
     IF iType = IDMOD THEN
+      i := X86.NewLabel();
       i := X86.NewLabel()
     END
   END;
@@ -776,9 +781,20 @@ END IdType;
 
 PROCEDURE FieldOffset(Align, RecSize: INTEGER): INTEGER;
 BEGIN
-  Assert2(RecSize <= SCAN.maxINT - (Align - RecSize MOD Align) MOD Align, 88)
+  Assert2(RecSize <= SCAN.maxINT - (Align - RecSize MOD Align) MOD Align, 83)
   RETURN RecSize + (Align - RecSize MOD Align) MOD Align
 END FieldOffset;
+
+PROCEDURE Dim*(T: pTYPE): INTEGER;
+VAR n: INTEGER;
+BEGIN
+  n := 0;
+  WHILE (T.tType = TARRAY) & (T.Len = 0) DO
+    INC(n);
+    T := T.Base
+  END
+  RETURN n
+END Dim;
 
 PROCEDURE SetFields(Tr, Tf: pTYPE; Rec: BOOLEAN);
 VAR cur: UTILS.ITEM;
@@ -794,8 +810,10 @@ BEGIN
       IF Tf.Align > Tr.Align THEN
         Tr.Align := Tf.Align
       END;
-      Assert2(cur(FIELD).Offset <= SCAN.maxINT - Tf.Size, 88);
+      Assert2(cur(FIELD).Offset <= SCAN.maxINT - Tf.Size, 83);
       Tr.Size := cur(FIELD).Offset + Tf.Size
+    ELSE
+      Tr.Len := Tr.Len + 4 * (ORD((Tf.tType = TRECORD) & cur(FIELD).ByRef) + Dim(Tf) + ORD((Tf.tType = TLONGREAL) & ~cur(FIELD).ByRef) + 1)
     END;
     cur := cur.Next
   END
@@ -864,17 +882,6 @@ BEGIN
     END
   END
 END ReadFields;
-
-PROCEDURE Dim*(T: pTYPE): INTEGER;
-VAR n: INTEGER;
-BEGIN
-  n := 0;
-  WHILE (T.tType = TARRAY) & (T.Len = 0) DO
-    INC(n);
-    T := T.Base
-  END
-  RETURN n
-END Dim;
 
 PROCEDURE OpenBase*(T: pTYPE): pTYPE;
 BEGIN
@@ -964,7 +971,7 @@ BEGIN
 END FormalType;
 
 PROCEDURE Section(T: pTYPE);
-VAR Name: SCAN.NODE; ByRef: BOOLEAN; field: FIELD;
+VAR Name: SCAN.NODE; ByRef, cont: BOOLEAN; field: FIELD;
     Tf: pTYPE; fp: IDENT; line, col: INTEGER; proc: BOOLEAN;
 BEGIN
   proc := T = NIL;
@@ -978,7 +985,8 @@ BEGIN
     Next;
     Check(lxIDENT)
   END;
-  WHILE SCAN.tLex = lxIDENT DO
+  cont := TRUE;
+  WHILE cont DO
     Name := SCAN.id;
     Assert2(GetField(T, Name) = NIL, 30);
     NEW(field);
@@ -1009,7 +1017,8 @@ BEGIN
       SetFields(T, Tf, FALSE);
       IF proc THEN
         SetVars(Tf)
-      END
+      END;
+      cont := FALSE
     ELSE
       Assert2(FALSE, 85)
     END
@@ -1061,6 +1070,29 @@ BEGIN
     END
   END
 END FormalList;
+
+PROCEDURE CallFlag(VAR Call: INTEGER): BOOLEAN;
+VAR flag: SCAN.LEXSTR; res: BOOLEAN;
+BEGIN
+  res := SCAN.tLex = lxLSquare;
+  IF res THEN
+    Next;
+    SCAN.GetLexStr(flag);
+    IF flag = "cdecl" THEN
+      Call := cdecl
+    ELSIF flag = "stdcall" THEN
+      Call := stdcall
+    ELSE
+      Assert2(FALSE, 44)
+    END;
+    Next;
+    Check(lxRSquare);
+    Next;
+  ELSE
+    Call := stdcall
+  END
+  RETURN res
+END CallFlag;
 
 PROCEDURE StructType(Comma: BOOLEAN): pTYPE;
 VAR v: LONGREAL; T, nov: pTYPE; line, col: INTEGER; flag: BOOLEAN;
@@ -1134,6 +1166,7 @@ BEGIN
     flag := FALSE;
     Next;
     nov := CreateType(TPROC, 0, 4, 0, sttypes[TVOID], TRUE);
+    IF CallFlag(nov.Call) THEN END;
     nov.Align := 4;
     FormalList(nov, nov.Base)
   END;
@@ -1176,7 +1209,7 @@ BEGIN
 END LinkPtr;
 
 PROCEDURE DeclSeq;
-VAR Value: LONGREAL; T: pTYPE; Name: SCAN.NODE; line, col: INTEGER;
+VAR Value: LONGREAL; T: pTYPE; Name: SCAN.NODE; line, col, Call: INTEGER;
     Export, func: BOOLEAN; last, id: IDENT; e: EXPRESSION;
 
   PROCEDURE IdentDef;
@@ -1253,6 +1286,10 @@ BEGIN
   END;
   WHILE SCAN.tLex = lxPROCEDURE DO
     Next;
+    Coord(line, col);
+    IF CallFlag(Call) THEN
+      Assert(unit.Level = 3, line, col, 45)
+    END;
     Check(lxIDENT);
     IdentDef;
     PushIdent(Name, line, col, IDPROC, CreateType(TPROC, 0, 4, 0, sttypes[TVOID], TRUE), NIL, Export, 0, FALSE);
@@ -1264,6 +1301,7 @@ BEGIN
     curBlock := id;
     Guard;
     FormalList(NIL, curBlock.T.Base);
+    id.T.Call := Call;
     Check(lxSemi);
     Next;
     DeclSeq;
@@ -1294,7 +1332,7 @@ BEGIN
     Next;
     Check(lxSemi);
     Next;
-    X86.ProcEnd(id.Number, id.ParamSize + (id.Level - 3) * 4, func, curBlock.T.Base.tType IN {TREAL, TLONGREAL});
+    X86.ProcEnd(id.Number, (id.ParamSize + (id.Level - 3) * 4) * ORD(curBlock.T.Call = stdcall), func, curBlock.T.Base.tType IN {TREAL, TLONGREAL});
     PopBlock;
     curBlock := curBlock.Parent
   END
@@ -1426,6 +1464,7 @@ BEGIN
   Header(SCAN.AddNode("SYSTEM"));
   PushSysProc("ADR",     sysADR);
   PushSysProc("SIZE",    sysSIZE);
+  PushSysProc("TYPEID",  sysTYPEID);
   PushSysProc("BIT",     sysBIT);
   PushSysProc("GET",     sysGET);
   PushSysProc("PUT",     sysPUT);
@@ -1442,7 +1481,7 @@ END Pseudo;
 PROCEDURE ReadModule(Path, Name1: UTILS.FILENAME): BOOLEAN;
 VAR FHandle: INTEGER; name, Name, b: UTILS.FILENAME; idmod: IDENT; Res, temp: BOOLEAN;
 BEGIN
-  Res := TRUE;
+  Res := FALSE;
   name := Name1;
   Name := Name1;
   UTILS.concat(Path, Name, b);
@@ -1496,9 +1535,8 @@ BEGIN
     Next; Check(lxDot);
     unit.Closed := TRUE;
     unit.Import.Clear(unit.Import);
-    SCAN.Close
-  ELSE
-    Res := FALSE
+    SCAN.Close;
+    Res := TRUE
   END
   RETURN Res
 END ReadModule;

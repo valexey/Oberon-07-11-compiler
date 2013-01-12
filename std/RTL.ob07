@@ -100,7 +100,6 @@ BEGIN
 END _rset;
 
 PROCEDURE _inset*(y, x: INTEGER): BOOLEAN;
-BEGIN
   RETURN (ASR(x, 5) = 0) & ODD(ROR(y, x))
 END _inset;
 
@@ -116,7 +115,7 @@ END _checktype;
 
 PROCEDURE _savearr*(Size, source, dest: INTEGER);
 BEGIN
-  sys.CODE("FC8BD78BC68B7D108B750C8B4D08F3A48BFA8BF0")
+  sys.CODE("9CFC8BD78BC68B7D108B750C8B4D08F3A48BFA8BF09D")
 END _savearr;
 
 PROCEDURE _saverec*(dyn, stat, Size, source, dest: INTEGER): BOOLEAN;
@@ -227,12 +226,10 @@ BEGIN
 END _strcmp;
 
 PROCEDURE _lstrcmp*(op, b, a, alen: INTEGER): BOOLEAN;
-BEGIN
   RETURN _strcmp(op, sys.ADR(b), 2, a, alen)
 END _lstrcmp;
 
 PROCEDURE _rstrcmp*(op, b, blen, a: INTEGER): BOOLEAN;
-BEGIN
   RETURN _strcmp(op, b, blen, sys.ADR(a), 2)
 END _rstrcmp;
 

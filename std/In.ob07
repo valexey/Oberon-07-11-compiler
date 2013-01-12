@@ -23,7 +23,6 @@ BEGIN
 END GetProc;
 
 PROCEDURE digit(ch: CHAR): BOOLEAN;
-BEGIN
   RETURN (ch >= "0") & (ch <= "9")
 END digit;
 

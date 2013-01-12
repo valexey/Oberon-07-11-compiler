@@ -3,32 +3,26 @@ MODULE Write;
 IMPORT File, sys := SYSTEM;
 
 PROCEDURE Char*(F: INTEGER; x: CHAR): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(CHAR)) = sys.SIZE(CHAR)
 END Char;
 
 PROCEDURE Int*(F: INTEGER; x: INTEGER): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(INTEGER)) = sys.SIZE(INTEGER)
 END Int;
 
 PROCEDURE Real*(F: INTEGER; x: REAL): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(REAL)) = sys.SIZE(REAL)
 END Real;
 
 PROCEDURE LongReal*(F: INTEGER; x: LONGREAL): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(LONGREAL)) = sys.SIZE(LONGREAL)
 END LongReal;
 
 PROCEDURE Boolean*(F: INTEGER; x: BOOLEAN): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(BOOLEAN)) = sys.SIZE(BOOLEAN)
 END Boolean;
 
 PROCEDURE Set*(F: INTEGER; x: SET): BOOLEAN;
-BEGIN
   RETURN File.Write(F, sys.ADR(x), sys.SIZE(SET)) = sys.SIZE(SET)
 END Set;
 

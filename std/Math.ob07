@@ -59,7 +59,6 @@ BEGIN
 END SameValue;
 
 PROCEDURE IsZero(x: LONGREAL): BOOLEAN;
-BEGIN
   RETURN ABS(x) <= 1.0D-12
 END IsZero;
 
@@ -113,17 +112,14 @@ BEGIN
 END arctan2;
 
 PROCEDURE arcsin*(x: LONGREAL): LONGREAL;
-BEGIN
   RETURN arctan2(x, sqrt(1.0D0 - x * x))
 END arcsin;
 
 PROCEDURE arccos*(x: LONGREAL): LONGREAL;
-BEGIN
   RETURN arctan2(sqrt(1.0D0 - x * x), x)
 END arccos;
 
 PROCEDURE arctan*(x: LONGREAL): LONGREAL;
-BEGIN
   RETURN arctan2(x, 1.0D0)
 END arctan;
 
@@ -175,12 +171,10 @@ BEGIN
 END tanh;
 
 PROCEDURE arcsinh*(x: LONGREAL): LONGREAL;
-BEGIN
   RETURN ln(x + sqrt((x * x) + 1.0D0))
 END arcsinh;
 
 PROCEDURE arccosh*(x: LONGREAL): LONGREAL;
-BEGIN
   RETURN ln(x + sqrt((x - 1.0D0) / (x + 1.0D0)) * (x + 1.0D0))
 END arccosh;
 
